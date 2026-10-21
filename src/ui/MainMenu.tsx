@@ -73,7 +73,7 @@ export function MainMenu(): ReactElement {
       </div>
 
       <footer className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-[#5a6470]">
-        <span>v0.1.0 · stage 1</span>
+        <span>v0.2.0 · stage 2</span>
         <span>landscape only</span>
       </footer>
     </div>

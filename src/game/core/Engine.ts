@@ -1,7 +1,9 @@
 import { PerspectiveCamera, Raycaster, Scene } from 'three';
 import type { Vector3, WebGLRenderer } from 'three';
 import type { FrameStats, InitProgress, QualityLevel, QualityPreset } from '@/types/engine';
-import type { GameScene } from '@/types/scene';
+import type { DebugSceneSnapshot, GameScene } from '@/types/scene';
+import type { InputAction, InteractionHint, MoveInput } from '@/input/types';
+import { cameraRelativeMove } from '@/input/movement';
 import { createRenderer, applyShadowPreset, resizeRenderer } from './Renderer';
 import { QualityController } from './Quality';
 import { PerfMonitor } from './PerfMonitor';
@@ -158,6 +160,41 @@ export class Engine {
   /** Applies a pinch factor (>1 zoom out). */
   zoomCamera(factor: number): void {
     this.rig.applyZoomFactor(factor);
+  }
+
+  /**
+   * Forwards stick input to the scene, resolving it against the camera yaw.
+   * Called by the touch layer on every stick move (≤60 Hz).
+   */
+  setMoveInput(input: MoveInput): void {
+    const scene = this.gameScene;
+    if (!scene) return;
+    if (input.magnitude <= 0) {
+      scene.setMoveInput({ x: 0, z: 0, magnitude: 0 });
+      return;
+    }
+    const direction = cameraRelativeMove(input.x, input.y, this.rig.yaw);
+    scene.setMoveInput({ x: direction.x, z: direction.y, magnitude: input.magnitude });
+  }
+
+  /** Routes a HUD action to the active scene. */
+  triggerAction(action: InputAction): void {
+    this.gameScene?.triggerAction(action);
+  }
+
+  /** Current interaction offer (drives the ⚡ button visibility). */
+  getInteractionHint(): InteractionHint | null {
+    return this.gameScene?.getInteractionHint() ?? null;
+  }
+
+  /** Latest performance snapshot (last completed 500 ms window). */
+  getStats(): FrameStats {
+    return this.perf.stats;
+  }
+
+  /** Scene diagnostics for the dev bridge; null before the scene is built. */
+  getDebugSceneSnapshot(): DebugSceneSnapshot | null {
+    return this.gameScene?.getDebugSnapshot() ?? null;
   }
 
   dispose(): void {

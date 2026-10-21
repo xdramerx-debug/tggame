@@ -1,4 +1,6 @@
 import type { FrameStats, InitProgress, QualityLevel } from '@/types/engine';
+import type { InputAction, InteractionHint, MoveInput } from '@/input/types';
+import type { DebugSnapshot } from '@/game/debug';
 import { Engine } from './core/Engine';
 import { hapticSelection } from '@/telegram/haptic';
 
@@ -95,6 +97,36 @@ class GameHost {
 
   zoomCamera(factor: number): void {
     this.engine?.zoomCamera(factor);
+  }
+
+  setMoveInput(input: MoveInput): void {
+    this.engine?.setMoveInput(input);
+  }
+
+  triggerAction(action: InputAction): void {
+    this.engine?.triggerAction(action);
+  }
+
+  getInteractionHint(): InteractionHint | null {
+    return this.engine?.getInteractionHint() ?? null;
+  }
+
+  /** Diagnostics consumed by the dev bridge (Playwright + manual checks). */
+  getDebugSnapshot(): DebugSnapshot | null {
+    const engine = this.engine;
+    const scene = engine?.getDebugSceneSnapshot();
+    if (!engine || !scene) return null;
+    const stats = engine.getStats();
+    return {
+      camera: {
+        yaw: engine.rig.yaw,
+        pitch: engine.rig.pitch,
+        distance: engine.rig.distance,
+      },
+      scene,
+      quality: engine.qualityLevel,
+      fps: stats?.fps ?? 0,
+    };
   }
 
   dispose(): void {

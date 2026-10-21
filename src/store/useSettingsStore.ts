@@ -43,7 +43,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   cameraSensitivity: 0.25,
   buttonScale: 'M',
   handedness: 'right',
-  autoAttack: false,
+  // Spec: tap-to-attack in the camera area is on by default and can be disabled.
+  autoAttack: true,
   hudOpacity: 1,
   hapticsEnabled: true,
   hapticIntensity: 1,

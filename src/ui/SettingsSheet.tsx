@@ -134,6 +134,20 @@ export function SettingsSheet({ open, onClose }: { readonly open: boolean; reado
           />
         </Row>
 
+        <Row title="Тап по камере = быстрый удар" hint={settings.autoAttack ? 'вкл' : 'выкл'}>
+          <button
+            type="button"
+            aria-pressed={settings.autoAttack}
+            className={`hud-panel min-h-[48px] px-4 text-sm ${
+              settings.autoAttack ? 'border-gold text-gold' : 'border-white/10 text-[#9aa3ae]'
+            }`}
+            onPointerDown={() => hapticSelection()}
+            onClick={() => settings.setAutoAttack(!settings.autoAttack)}
+          >
+            {settings.autoAttack ? 'Включено' : 'Выключено'}
+          </button>
+        </Row>
+
         <Row title="Прозрачность HUD" hint={`${Math.round(settings.hudOpacity * 100)}%`}>
           <input
             type="range"
