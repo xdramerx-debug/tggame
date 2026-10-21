@@ -1,0 +1,52 @@
+{
+  "name": "tenebris",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "TENEBRIS — mobile-only 3D roguelite survival RPG for Telegram Mini Apps",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "size": "node scripts/check-bundle-size.mjs"
+  },
+  "dependencies": {
+    "@telegram-apps/sdk": "^3.11.8",
+    "dexie": "^4.4.6",
+    "framer-motion": "^11.18.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "three": "^0.186.1",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^22.19.0",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "autoprefixer": "^10.6.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "postcss": "^8.5.31",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "browserslist": [
+    "ios_saf >= 15",
+    "chromeandroid >= 100",
+    "and_chr >= 100"
+  ]
+}
