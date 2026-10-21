@@ -11,6 +11,7 @@ import { Loop } from './Loop';
 import { CameraRig } from './CameraRig';
 import { PostFX } from '@/game/visual/PostFX';
 import { TestScene } from '@/game/scenes/TestScene';
+import { PhysicsWorld } from '@/game/physics';
 
 export interface EngineOptions {
   readonly canvas: HTMLCanvasElement;
@@ -47,6 +48,7 @@ export class Engine {
   private readonly quality: QualityController;
   private readonly raycaster = new Raycaster();
   private gameScene: GameScene | null = null;
+  private physicsWorld: PhysicsWorld | null = null;
   private postfx: PostFX | null = null;
   private cleanup: (() => void)[] = [];
   private disposed = false;
@@ -100,8 +102,20 @@ export class Engine {
     this.installResizeHandlers();
     await yieldToBrowser();
 
+    // Physics WASM is a separate chunk: it loads during the engine stage, in
+    // parallel with nothing else, so the first frame is never blocked by it.
+    progress('engine', 0.14, 'Физика');
+    try {
+      this.physicsWorld = await PhysicsWorld.create();
+    } catch (error) {
+      console.error('[engine] physics init failed', error);
+      throw new Error('Не удалось загрузить физический движок (WASM)');
+    }
+    progress('engine', 0.24);
+
     progress('textures', 0.3);
-    const scene = new TestScene();
+    const scene = new TestScene(this.physicsWorld);
+    this.physicsWorld.primeQueries();
     this.gameScene = scene;
     this.scene.add(scene.root);
     scene.applyQuality(this.quality.preset);
@@ -144,6 +158,7 @@ export class Engine {
     // Drop the stats window that spans the pause: it would read as a huge frame
     // time and could trigger a false quality downgrade.
     this.perf.reset();
+    this.physicsWorld?.resetAccumulator();
     this.loop.resume();
   }
 
@@ -192,6 +207,16 @@ export class Engine {
     return this.perf.stats;
   }
 
+  /** Executed fixed physics steps (diagnostics / E2E). */
+  getPhysicsStepCount(): number {
+    return this.physicsWorld?.stepCount ?? 0;
+  }
+
+  /** Dev-only collider wireframes (stage 3 validation). */
+  setPhysicsDebug(enabled: boolean): void {
+    if (this.gameScene instanceof TestScene) this.gameScene.setPhysicsDebug(enabled);
+  }
+
   /** Scene diagnostics for the dev bridge; null before the scene is built. */
   getDebugSceneSnapshot(): DebugSceneSnapshot | null {
     return this.gameScene?.getDebugSnapshot() ?? null;
@@ -207,6 +232,8 @@ export class Engine {
     this.gameScene = null;
     this.postfx?.dispose();
     this.postfx = null;
+    this.physicsWorld?.dispose();
+    this.physicsWorld = null;
     this.scene.clear();
     this.rendererBundle.dispose();
   }
@@ -214,6 +241,8 @@ export class Engine {
   private readonly tick = (dt: number, elapsed: number): void => {
     const scene = this.gameScene;
     if (!scene) return;
+    // Fixed-rate simulation first, then visuals on the raw frame delta.
+    this.physicsWorld?.step(dt);
     scene.update(dt, elapsed);
     this.rig.setTarget(scene.followTarget);
     this.rig.update(dt);
@@ -242,6 +271,14 @@ export class Engine {
   private probeCamera(origin: Vector3, direction: Vector3, maxDistance: number): number {
     const scene = this.gameScene;
     if (!scene) return Number.POSITIVE_INFINITY;
+
+    // Physics ray first: it matches the colliders the player actually bumps into
+    // and is ~10× cheaper than traversing scene meshes.
+    const exclusion = scene.getPlayerCollider?.() ?? null;
+    const physicsHit = this.physicsWorld?.raycast(origin, direction, maxDistance, exclusion ?? undefined);
+    if (physicsHit) return physicsHit.distance;
+
+    // Fallback for scenes without physics (menus, debug scenes).
     this.raycaster.set(origin, direction);
     this.raycaster.near = 0.05;
     this.raycaster.far = maxDistance;

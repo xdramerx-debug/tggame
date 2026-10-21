@@ -24,7 +24,9 @@ export default defineConfig({
     cssTarget: 'chrome100',
     sourcemap: false,
     assetsInlineLimit: 2048,
-    chunkSizeWarningLimit: 900,
+    // Rapier ships its WASM inline (compat build) and is a deliberately lazy
+    // chunk; the strict size gate lives in scripts/check-bundle-size.mjs.
+    chunkSizeWarningLimit: 4500,
     rollupOptions: {
       output: {
         manualChunks(id: string): string | undefined {

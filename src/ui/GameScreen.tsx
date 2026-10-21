@@ -60,6 +60,13 @@ export function GameScreen(): ReactElement {
 
   useEffect(() => installDebugBridge(() => gameHost.getDebugSnapshot()), []);
 
+  // Dev-only collider wireframes: `?physics=1`.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const enabled = new URLSearchParams(window.location.search).get('physics') === '1';
+    gameHost.setPhysicsDebug(enabled);
+  }, []);
+
   const pauseToMenu = (): void => {
     hapticImpact('light');
     gameHost.setMoveInput({ x: 0, y: 0, magnitude: 0 });
@@ -110,7 +117,7 @@ export function GameScreen(): ReactElement {
 
       <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+6px)] z-0 flex justify-center">
         <p className="hud-panel hud-outline px-3 py-1 text-center text-[11px] leading-snug text-[#9aa3ae]">
-          Этап 2 · стик — движение, свайп — камера, пинч — зум, тап — удар
+          Этап 3 · Rapier: стены, колонны, автоподъём ступеней · ?physics=1
         </p>
       </div>
     </div>

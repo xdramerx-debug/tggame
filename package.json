@@ -1,7 +1,7 @@
 {
   "name": "tenebris",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "TENEBRIS — mobile-only 3D roguelite survival RPG for Telegram Mini Apps",
   "engines": {
@@ -19,6 +19,7 @@
     "size": "node scripts/check-bundle-size.mjs"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
     "@telegram-apps/sdk": "^3.11.8",
     "dexie": "^4.4.6",
     "framer-motion": "^11.18.2",

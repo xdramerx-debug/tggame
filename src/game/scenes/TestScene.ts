@@ -19,11 +19,15 @@ import {
   Vector3,
 } from 'three';
 import type { Object3D } from 'three';
+import type { Collider } from '@dimforge/rapier3d-compat';
 import type { QualityPreset } from '@/types/engine';
 import type { DebugSceneSnapshot, GameScene, MoveCommand } from '@/types/scene';
 import type { InputAction, InteractionHint } from '@/input/types';
 import { directionToYaw, shortestAngleDelta } from '@/input/movement';
 import { createStoneTextures } from '@/game/visual/textures/proceduralTextures';
+import { CharacterBody, PLAYER_CAPSULE, type PhysicsWorld } from '@/game/physics';
+import { ACTION_SPECS } from '@/input/actions';
+import { PhysicsDebugView } from '@/game/visual/PhysicsDebug';
 
 interface Crystal {
   readonly mesh: Mesh;
@@ -32,19 +36,26 @@ interface Crystal {
   collected: boolean;
 }
 
-const WALK_SPEED = 2.9;
-const DASH_SPEED = 9.5;
+const WALK_SPEED = 3.4;
+const DASH_SPEED = 11;
 const DASH_DURATION = 0.18;
-const ARENA_RADIUS = 11.5;
+const GRAVITY = -18;
 const INTERACT_RANGE = 2.4;
 const ATTACK_DURATION = 0.28;
 
+/** Pillars ring radius and count — shared by meshes and colliders. */
+const PILLAR_RADIUS = 9;
+const PILLAR_COUNT = 10;
+const ARENA_HALF = 17;
+const WALL_HEIGHT = 5;
+
 /**
- * Stage-2 playground: the lit stone arena plus a kinematically driven hero.
+ * Stage-3 arena: the same stone hall, now with a Rapier world behind it.
  *
- * Rapier arrives in stage 3 and replaces the manual locomotion below; everything
- * else (input contract, attack/dodge/interact hooks, debug snapshot) is already
- * the final shape so the migration is contained in this file.
+ * - Every wall, the floor and each pillar has a matching static collider.
+ * - The hero is a kinematic capsule driven by Rapier's character controller
+ *   (slide along walls, autostep, snap to ground), moved at a fixed 60 Hz.
+ * - The camera boom raycasts against the physics world instead of Three meshes.
  */
 export class TestScene implements GameScene {
   readonly root = new Scene();
@@ -59,17 +70,21 @@ export class TestScene implements GameScene {
   private readonly blade: Mesh;
   private readonly crystals: Crystal[] = [];
   private readonly pointerLights: PointLight[] = [];
+  private readonly player: CharacterBody;
+  private readonly physicsDebug: PhysicsDebugView;
 
   private move: MoveCommand = { x: 0, z: 0, magnitude: 0 };
   private lastDirection = { x: 0, z: -1 };
-  private facing = 0;
+  private facing = Math.PI;
+  private verticalVelocity = 0;
   private dashRemaining = 0;
+  private dashCooldownRemaining = 0;
   private dashDirection = { x: 0, z: -1 };
   private attackRemaining = 0;
   private attacks = 0;
   private collected = 0;
 
-  constructor() {
+  constructor(private readonly physics: PhysicsWorld) {
     this.root.background = new Color(0x0b0e14);
     this.root.fog = new FogExp2(0x0b0e14, 0.04);
 
@@ -91,7 +106,7 @@ export class TestScene implements GameScene {
     this.root.add(this.sun);
     this.root.add(this.sun.target);
 
-    // --- Architecture ---------------------------------------------------
+    // --- Architecture (meshes + colliders) ------------------------------
     const floorMaterial = new MeshStandardMaterial({
       map: this.textures.map,
       normalMap: this.textures.normalMap,
@@ -108,20 +123,28 @@ export class TestScene implements GameScene {
     });
     this.disposables.push(floorMaterial, wallMaterial);
 
-    const floorGeometry = new PlaneGeometry(34, 34, 1, 1);
+    const floorGeometry = new PlaneGeometry(ARENA_HALF * 2, ARENA_HALF * 2, 1, 1);
     this.disposables.push(floorGeometry);
     const floor = new Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.root.add(floor);
 
-    const wallGeometry = new BoxGeometry(34, 5, 0.8);
+    // Floor collider: a thin slab whose top surface is exactly y = 0.
+    this.physics.addStaticBox(
+      { x: 0, y: -0.25, z: 0 },
+      { x: ARENA_HALF, y: 0.25, z: ARENA_HALF },
+      0,
+      0.9,
+    );
+
+    const wallGeometry = new BoxGeometry(ARENA_HALF * 2, WALL_HEIGHT, 0.8);
     this.disposables.push(wallGeometry);
     const wallPlacements: { pos: [number, number, number]; rotY: number }[] = [
-      { pos: [0, 2.5, -17], rotY: 0 },
-      { pos: [0, 2.5, 17], rotY: 0 },
-      { pos: [-17, 2.5, 0], rotY: Math.PI / 2 },
-      { pos: [17, 2.5, 0], rotY: Math.PI / 2 },
+      { pos: [0, WALL_HEIGHT / 2, -ARENA_HALF], rotY: 0 },
+      { pos: [0, WALL_HEIGHT / 2, ARENA_HALF], rotY: 0 },
+      { pos: [-ARENA_HALF, WALL_HEIGHT / 2, 0], rotY: Math.PI / 2 },
+      { pos: [ARENA_HALF, WALL_HEIGHT / 2, 0], rotY: Math.PI / 2 },
     ];
     for (const placement of wallPlacements) {
       const wall = new Mesh(wallGeometry, wallMaterial);
@@ -131,9 +154,14 @@ export class TestScene implements GameScene {
       wall.receiveShadow = true;
       this.root.add(wall);
       this.collisionObjects.push(wall);
+      this.physics.addStaticBox(
+        { x: placement.pos[0], y: placement.pos[1], z: placement.pos[2] },
+        { x: ARENA_HALF, y: WALL_HEIGHT / 2, z: 0.4 },
+        placement.rotY,
+      );
     }
 
-    // Instanced pillars: one draw call for the whole ring.
+    // Instanced pillars: one draw call for the ring, one collider per pillar.
     const pillarGeometry = new CylinderGeometry(0.55, 0.7, 4.4, 8);
     const pillarMaterial = new MeshStandardMaterial({
       map: this.textures.map,
@@ -142,16 +170,18 @@ export class TestScene implements GameScene {
       metalness: 0.06,
     });
     this.disposables.push(pillarGeometry, pillarMaterial);
-    const pillarCount = 10;
-    const pillars = new InstancedMesh(pillarGeometry, pillarMaterial, pillarCount);
+    const pillars = new InstancedMesh(pillarGeometry, pillarMaterial, PILLAR_COUNT);
     pillars.castShadow = true;
     pillars.receiveShadow = true;
     const matrix = new Matrix4();
-    const radius = 9;
-    for (let i = 0; i < pillarCount; i += 1) {
-      const angle = (i / pillarCount) * Math.PI * 2;
-      matrix.makeTranslation(Math.cos(angle) * radius, 2.2, Math.sin(angle) * radius);
+    for (let i = 0; i < PILLAR_COUNT; i += 1) {
+      const angle = (i / PILLAR_COUNT) * Math.PI * 2;
+      const x = Math.cos(angle) * PILLAR_RADIUS;
+      const z = Math.sin(angle) * PILLAR_RADIUS;
+      matrix.makeTranslation(x, 2.2, z);
       pillars.setMatrixAt(i, matrix);
+      // Slightly wider than the visual cone so the capsule never clips visually.
+      this.physics.addStaticCylinder({ x, y: 2.2, z }, 2.2, 0.68);
     }
     pillars.instanceMatrix.needsUpdate = true;
     this.root.add(pillars);
@@ -197,14 +227,14 @@ export class TestScene implements GameScene {
     // --- Hero (placeholder until the rigged player arrives in stage 5) --
     this.hero = new Group();
     const heroMaterial = new MeshStandardMaterial({ color: 0x4a7c8c, roughness: 0.55, metalness: 0.25 });
-    const bodyGeometry = new CapsuleGeometry(0.35, 0.9, 4, 10);
+    const bodyGeometry = new CapsuleGeometry(PLAYER_CAPSULE.radius, PLAYER_CAPSULE.halfHeight * 2, 4, 10);
     const headGeometry = new SphereGeometry(0.24, 12, 8);
     this.disposables.push(bodyGeometry, headGeometry, heroMaterial);
     const body = new Mesh(bodyGeometry, heroMaterial);
-    body.position.y = 0.85;
+    body.position.y = PLAYER_CAPSULE.halfHeight + PLAYER_CAPSULE.radius;
     body.castShadow = true;
     const head = new Mesh(headGeometry, heroMaterial);
-    head.position.y = 1.6;
+    head.position.y = 1.62;
     head.castShadow = true;
     const bladeMaterial = new MeshStandardMaterial({
       color: 0xd6d6d6,
@@ -219,10 +249,32 @@ export class TestScene implements GameScene {
     this.blade.rotation.z = 0.28;
     this.blade.castShadow = true;
     this.hero.add(body, head, this.blade);
-    this.hero.position.set(0, 0, 2);
-    this.root.add(this.hero);
-    this.facing = Math.PI;
     this.hero.rotation.y = this.facing;
+    this.root.add(this.hero);
+
+    this.player = new CharacterBody(this.physics, {
+      dimensions: PLAYER_CAPSULE,
+      position: { x: 0, y: 0.05, z: 2 },
+    });
+    this.syncHeroToBody();
+
+    this.physics.onFixedStep((step) => this.fixedUpdate(step));
+
+    this.physicsDebug = new PhysicsDebugView(this.physics, false);
+    this.physicsDebug.attachTo(this.root);
+  }
+
+  /** Dev toggle for collider wireframes. */
+  setPhysicsDebug(enabled: boolean): void {
+    this.physicsDebug.setEnabled(enabled);
+  }
+
+  get isPhysicsDebugEnabled(): boolean {
+    return this.physicsDebug.isEnabled;
+  }
+
+  getPlayerCollider(): Collider | null {
+    return this.player.capsule;
   }
 
   applyQuality(preset: QualityPreset): void {
@@ -258,34 +310,65 @@ export class TestScene implements GameScene {
         break;
       case 'skill1':
       case 'skill2':
-        // Skills arrive with the combat system (stage 6); the button already
-        // plays its cooldown and haptic so the input contract is validated.
-        break;
       default:
         break;
     }
   }
 
   getInteractionHint(): InteractionHint | null {
-    const nearest = this.nearestCrystal();
-    if (!nearest) return null;
-    return { available: true, label: 'Собрать эссенцию' };
+    return this.nearestCrystal() ? { available: true, label: 'Собрать эссенцию' } : null;
   }
 
   getDebugSnapshot(): DebugSceneSnapshot {
+    const feet = this.player.feet;
     return {
-      hero: { x: this.hero.position.x, y: this.hero.position.y, z: this.hero.position.z },
+      hero: { x: feet.x, y: feet.y, z: feet.z },
       attacks: this.attacks,
       dodging: this.dashRemaining > 0,
       collected: this.collected,
       canInteract: this.nearestCrystal() !== null,
+      grounded: this.player.isGrounded,
     };
   }
 
+  /** Fixed 60 Hz simulation: locomotion through the character controller. */
+  fixedUpdate(step: number): void {
+    this.dashCooldownRemaining = Math.max(0, this.dashCooldownRemaining - step);
+
+    let vx = 0;
+    let vz = 0;
+    if (this.dashRemaining > 0) {
+      vx = this.dashDirection.x * DASH_SPEED;
+      vz = this.dashDirection.z * DASH_SPEED;
+      this.dashRemaining = Math.max(0, this.dashRemaining - step);
+    } else if (this.move.magnitude > 0.01) {
+      const speed = WALK_SPEED * this.move.magnitude;
+      vx = this.move.x * speed;
+      vz = this.move.z * speed;
+    }
+
+    // Gravity keeps the capsule glued to floors and lets it drop off ledges.
+    if (this.player.isGrounded && this.verticalVelocity <= 0) {
+      this.verticalVelocity = 0;
+    } else {
+      this.verticalVelocity += GRAVITY * step;
+    }
+
+    const delta = { x: vx * step, y: this.verticalVelocity * step, z: vz * step };
+    this.player.moveBy(delta);
+
+    if (Math.abs(vx) > 0.01 || Math.abs(vz) > 0.01) {
+      const targetYaw = directionToYaw({ x: vx, y: vz });
+      this.facing += shortestAngleDelta(this.facing, targetYaw) * Math.min(1, step * 14);
+    }
+  }
+
+  /** Per-frame visuals. */
   update(dt: number, elapsed: number): void {
-    this.applyLocomotion(dt);
+    this.syncHeroToBody();
     this.animateHero(dt, elapsed);
     this.animateCrystals(elapsed);
+    this.physicsDebug.update();
 
     for (const torch of this.torches) {
       const flicker = Math.sin(elapsed * 11 + torch.phase) * 0.16 + Math.sin(elapsed * 23 + torch.phase * 2) * 0.08;
@@ -297,6 +380,9 @@ export class TestScene implements GameScene {
   }
 
   dispose(): void {
+    this.physics.onFixedStep(null);
+    this.physicsDebug.dispose();
+    this.player.dispose();
     for (const item of this.disposables) item.dispose();
     this.textures.dispose();
     this.root.clear();
@@ -304,45 +390,17 @@ export class TestScene implements GameScene {
 
   // ---------------------------------------------------------------- internals
 
-  private applyLocomotion(dt: number): void {
-    let dx = 0;
-    let dz = 0;
-
-    if (this.dashRemaining > 0) {
-      dx = this.dashDirection.x * DASH_SPEED * dt;
-      dz = this.dashDirection.z * DASH_SPEED * dt;
-      this.dashRemaining = Math.max(0, this.dashRemaining - dt);
-    } else if (this.move.magnitude > 0.01) {
-      const speed = WALK_SPEED * this.move.magnitude;
-      dx = this.move.x * speed * dt;
-      dz = this.move.z * speed * dt;
-    }
-
-    if (dx !== 0 || dz !== 0) {
-      const nextX = this.hero.position.x + dx;
-      const nextZ = this.hero.position.z + dz;
-      const distance = Math.hypot(nextX, nextZ);
-      // Keep the hero inside the pillar ring; Rapier will handle walls later.
-      if (distance <= ARENA_RADIUS) {
-        this.hero.position.x = nextX;
-        this.hero.position.z = nextZ;
-      } else {
-        const k = ARENA_RADIUS / (distance || 1);
-        this.hero.position.x = nextX * k;
-        this.hero.position.z = nextZ * k;
-      }
-
-      const direction = this.dashRemaining > 0 ? this.dashDirection : { x: dx, z: dz };
-      const targetYaw = directionToYaw({ x: direction.x, y: direction.z });
-      this.facing += shortestAngleDelta(this.facing, targetYaw) * Math.min(1, dt * 14);
-    }
+  private syncHeroToBody(): void {
+    const feet = this.player.feet;
+    this.hero.position.set(feet.x, feet.y, feet.z);
     this.hero.rotation.y = this.facing;
   }
 
   private animateHero(dt: number, elapsed: number): void {
     const moving = this.move.magnitude > 0 || this.dashRemaining > 0;
-    const bob = Math.sin(elapsed * (moving ? 9 : 2.2)) * (moving ? 0.05 : 0.015);
-    this.hero.position.y = Math.max(0, bob);
+    // Visual bob is additive on top of the physics height, never replacing it.
+    const bob = Math.sin(elapsed * (moving ? 9 : 2.2)) * (moving ? 0.04 : 0.012);
+    this.hero.children[0]?.position.setY(PLAYER_CAPSULE.halfHeight + PLAYER_CAPSULE.radius + bob);
 
     if (this.attackRemaining > 0) {
       this.attackRemaining = Math.max(0, this.attackRemaining - dt);
@@ -366,23 +424,20 @@ export class TestScene implements GameScene {
   }
 
   private startDash(): void {
-    if (this.dashRemaining > 0) return;
-    const hasInput = this.move.magnitude > 0.01;
-    this.dashDirection = hasInput
-      ? { x: this.move.x, z: this.move.z }
-      : this.lastDirection;
+    if (this.dashRemaining > 0 || this.dashCooldownRemaining > 0) return;
+    // Single source of truth: the same spec the HUD button cools down from.
+    this.dashCooldownRemaining = ACTION_SPECS.dodge.cooldownMs / 1000;
+    this.dashDirection = this.move.magnitude > 0.01 ? { x: this.move.x, z: this.move.z } : this.lastDirection;
     this.dashRemaining = DASH_DURATION;
   }
 
   private nearestCrystal(): Crystal | null {
     let best: Crystal | null = null;
     let bestDistance = INTERACT_RANGE;
+    const feet = this.player.feet;
     for (const crystal of this.crystals) {
       if (crystal.collected) continue;
-      const distance = Math.hypot(
-        crystal.mesh.position.x - this.hero.position.x,
-        crystal.mesh.position.z - this.hero.position.z,
-      );
+      const distance = Math.hypot(crystal.mesh.position.x - feet.x, crystal.mesh.position.z - feet.z);
       if (distance <= bestDistance) {
         best = crystal;
         bestDistance = distance;

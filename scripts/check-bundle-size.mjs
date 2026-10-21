@@ -45,7 +45,12 @@ for (const row of rows.slice(0, 12)) {
 console.log(`\nTotal raw:  ${(totalRaw / 1024).toFixed(1)} kB`);
 console.log(`Total gzip: ${(totalGzip / 1024).toFixed(1)} kB (budget ${(BUDGET_GZIP / 1024).toFixed(0)} kB)`);
 
-const jsChunks = rows.filter((row) => row.file.endsWith('.js') && row.raw > CHUNK_WARN_BYTES);
+// Rapier's compat build inlines the WASM as base64 and is loaded lazily on the
+// splash screen; it is accounted for in the total but is not an "unexpected" chunk.
+const EXPECTED_LAZY = /rapier/i;
+const jsChunks = rows.filter(
+  (row) => row.file.endsWith('.js') && row.raw > CHUNK_WARN_BYTES && !EXPECTED_LAZY.test(row.file),
+);
 if (jsChunks.length > 0) {
   console.warn(`\n⚠ JS chunks above ${CHUNK_WARN_BYTES / 1024} kB: ${jsChunks.map((c) => c.file).join(', ')}`);
 }

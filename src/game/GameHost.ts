@@ -111,6 +111,11 @@ class GameHost {
     return this.engine?.getInteractionHint() ?? null;
   }
 
+  /** Dev-only: toggle Rapier collider wireframes. */
+  setPhysicsDebug(enabled: boolean): void {
+    this.engine?.setPhysicsDebug(enabled);
+  }
+
   /** Diagnostics consumed by the dev bridge (Playwright + manual checks). */
   getDebugSnapshot(): DebugSnapshot | null {
     const engine = this.engine;
@@ -126,6 +131,7 @@ class GameHost {
       scene,
       quality: engine.qualityLevel,
       fps: stats?.fps ?? 0,
+      physicsSteps: engine.getPhysicsStepCount(),
     };
   }
 

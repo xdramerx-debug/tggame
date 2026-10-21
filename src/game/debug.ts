@@ -9,6 +9,8 @@ export interface DebugSnapshot {
   readonly scene: DebugSceneSnapshot;
   readonly quality: QualityLevel;
   readonly fps: number;
+  /** Fixed physics steps executed since boot (proves the simulation advances). */
+  readonly physicsSteps: number;
 }
 
 interface TenebrisBridge {
@@ -29,7 +31,7 @@ declare global {
  */
 export function installDebugBridge(getState: () => DebugSnapshot | null): () => void {
   if (!import.meta.env.DEV) return () => undefined;
-  window.__TENEBRIS__ = { getState, version: '0.2.0' };
+  window.__TENEBRIS__ = { getState, version: '0.3.0' };
   return () => {
     if (window.__TENEBRIS__?.getState === getState) delete window.__TENEBRIS__;
   };

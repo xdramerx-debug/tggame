@@ -2,7 +2,7 @@
 
 **Мобильный 3D roguelite survival RPG для Telegram Mini Apps.** Только телефон, только landscape, только касания.
 
-> Статус: **этап 2 из 13 — touch-input фреймворк**. Движок, orbit-камера, пресеты качества, мобильный слой и Telegram-обёртки готовы; управление — виртуальный стик, свайп/пинч камеры, кнопки действий с кулдаунами. Дальше — Rapier и подземелье (см. дорожную карту).
+> Статус: **этап 3 из 13 — физика и character controller**. Движок, ввод, мобильный слой и Telegram готовы; сцена работает на Rapier3D: капсульный контроллер, стены, колонны, автоподъём ступеней, камера-raycast. Дальше — BSP-подземелье (см. дорожную карту).
 
 ---
 
@@ -17,6 +17,7 @@
 - **Telegram**: авто-тема (`themeParams`), haptic-обёртка (только `HapticFeedback`, без `navigator.vibrate`), MainButton/BackButton, fullscreen, `disableVerticalSwipes`, подтверждение закрытия.
 - **Настройки** (чувствительность камеры, размер кнопок, левша/правша, авто-атака, прозрачность HUD, вибро, качество, инверсия Y) с сохранением в IndexedDB (Dexie, схема из ТЗ).
 - **Splash по стадиям** (движок → текстуры → модели → звук) с реальным прогрессом загрузки.
+- **Физика (этап 3)**: Rapier3D WASM в отдельном чанке, фиксированный шаг 60 Гц с аккумулятором и ограничением 4 подшага, капсульный character controller (slide, autostep 0.35 м, snap-to-ground, уклон до 50°), гравитация, raycast камеры по физическим коллайдерам с исключением капсулы игрока, dev-визуализация коллайдеров (`?physics=1`).
 - **Dev-оверлей производительности**: FPS, frame time, worst frame, draw calls, tris, активный пресет (`?perf=0` чтобы скрыть).
 
 ## Управление (этап 2)
@@ -36,7 +37,7 @@
 
 ## Стек
 
-TypeScript (strict, без `any`) · Vite · React 18 · Zustand · TailwindCSS · Framer Motion · Three.js r186 · Dexie · @telegram-apps/sdk v3. Rapier3D, Howler и Vitest/Playwright-обвязка подключаются на этапах 3 и 10.
+TypeScript (strict, без `any`) · Vite · React 18 · Zustand · TailwindCSS · Framer Motion · Three.js r186 · Rapier3D 0.21 (WASM) · Dexie · @telegram-apps/sdk v3. Howler подключается на этапе 10.
 
 Целевые браузеры: iOS 15+ (WebKit в Telegram), Chrome Android 100+. Десктопной версии нет и не будет.
 
@@ -62,7 +63,8 @@ npm run size      # проверка бюджета бандла (< 3 MB gzip)
 src/
 ├── game/
 │   ├── core/        Engine, Renderer, Loop, CameraRig, Quality, PerfMonitor
-│   ├── visual/      PostFX, процедурные текстуры и карты нормалей
+│   ├── physics/     PhysicsWorld (Rapier), CharacterBody, FixedStep, капсулы
+│   ├── visual/      PostFX, PhysicsDebug, процедурные текстуры и карты нормалей
 │   ├── scenes/      TestScene, далее Dungeon (этап 4)
 │   └── GameHost.ts  синглтон canvas + engine
 ├── input/           VirtualJoystick, CameraSwipe, CooldownTracker, InputLayer, TouchButton
@@ -80,8 +82,9 @@ src/
 
 | Метрика | Бюджет | Сейчас (этап 1) |
 | --- | --- | --- |
-| Bundle gzip | < 3 MB | **~296 kB** |
-| Draw calls | < 100 | ~10 в тестовой сцене |
+| Bundle gzip | < 3 MB | **~1.9 MB** (Rapier WASM 1.67 MB в отдельном ленивом чанке) |
+| Draw calls | < 100 | ~11 в тестовой сцене (плюс линия коллайдеров в dev) |
+| Physics | фикс. 60 Гц | 60 Гц, ≤4 подшага/кадр, 16 статических коллайдеров |
 | Input UI per frame | без React-рендеров | rAF пишет transform/CSS-переменные |
 | Tris на сцене | < 120k | ~6k |
 | Первый экран | < 2.5 с | splash скрывается сразу после boot движка |
@@ -95,8 +98,10 @@ src/
 | --- | --- | --- |
 | 1 | Bootstrap mobile-first, движок, камера, пресеты, CI | ✅ |
 | 2 | PointerEvents-фреймворк, джойстик, свайп-камера, кнопки, multitouch | ✅ |
-| 3 | Rapier + character controller | ⏳ |
+| 3 | Rapier3D, капсульный контроллер, коллизии, камера-raycast | ✅ |
+| 3 | Rapier + character controller | ✅ |
 | 4 | BSP-подземелье | ⏳ |
+| 4 | BSP-подземелье: комнаты, коридоры, двери, свет, туман | ⏳ |
 | 5–7 | Blender-пайплайн, боёвка, лут и инвентарь | ⏳ |
 | 8–10 | Выживание, контент, аудио | ⏳ |
 | 11–13 | Полиш, Telegram UX, оптимизация и релиз | ⏳ |

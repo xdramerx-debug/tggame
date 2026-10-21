@@ -1,4 +1,5 @@
 import type { Object3D, Scene, Vector3 } from 'three';
+import type { Collider } from '@dimforge/rapier3d-compat';
 import type { QualityPreset } from './engine';
 import type { InputAction, InteractionHint } from '@/input/types';
 
@@ -14,6 +15,8 @@ export interface DebugSceneSnapshot {
   readonly collected: number;
   /** Whether an interaction is offered right now. */
   readonly canInteract: boolean;
+  /** Ground contact reported by the character controller. */
+  readonly grounded: boolean;
 }
 
 /** Camera-relative stick input converted into world space by the engine. */
@@ -37,6 +40,10 @@ export interface GameScene {
   /** Point the follow camera tracks each frame. */
   readonly followTarget: Vector3;
   update(dtSeconds: number, elapsedSeconds: number): void;
+  /** Simulation at a fixed rate (physics + locomotion); called 60×/s. */
+  fixedUpdate?(stepSeconds: number): void;
+  /** Collider excluded from the camera boom raycast (the player capsule). */
+  getPlayerCollider?(): Collider | null;
   /** Locomotion command, already resolved to world space by the engine. */
   setMoveInput(command: MoveCommand): void;
   /** Player action from the touch HUD (attack, dodge, interact, skills). */
