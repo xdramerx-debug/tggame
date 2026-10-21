@@ -10,7 +10,7 @@ import { PerfMonitor } from './PerfMonitor';
 import { Loop } from './Loop';
 import { CameraRig } from './CameraRig';
 import { PostFX } from '@/game/visual/PostFX';
-import { TestScene } from '@/game/scenes/TestScene';
+import { DungeonScene } from '@/game/scenes/DungeonScene';
 import { PhysicsWorld } from '@/game/physics';
 
 export interface EngineOptions {
@@ -19,6 +19,23 @@ export interface EngineOptions {
   readonly onProgress?: (progress: InitProgress) => void;
   readonly onStats?: (stats: FrameStats) => void;
   readonly onQualityChange?: (level: QualityLevel) => void;
+  /** HUD toast from the scene (floor change, blocked stairs). */
+  readonly onMessage?: (message: string) => void;
+  /** Overrides the run seed; otherwise `?seed=` or a random one is used. */
+  readonly seed?: number;
+}
+
+/** Reads the deterministic seed used by QA/Playwright (`?seed=1234`). */
+function resolveSeed(explicit?: number): number {
+  if (explicit !== undefined) return explicit >>> 0;
+  if (typeof window !== 'undefined') {
+    const param = new URLSearchParams(window.location.search).get('seed');
+    if (param !== null) {
+      const parsed = Number.parseInt(param, 10);
+      if (Number.isFinite(parsed)) return (parsed >>> 0) || 1;
+    }
+  }
+  return (Date.now() ^ 0x9e3779b9) >>> 0;
 }
 
 const yieldToBrowser = (): Promise<void> =>
@@ -48,15 +65,18 @@ export class Engine {
   private readonly quality: QualityController;
   private readonly raycaster = new Raycaster();
   private gameScene: GameScene | null = null;
+  private readonly dungeonSceneSeed: number;
   private physicsWorld: PhysicsWorld | null = null;
   private postfx: PostFX | null = null;
   private cleanup: (() => void)[] = [];
   private disposed = false;
   private initialized = false;
+  private physicsDebugRequested = false;
 
   constructor(options: EngineOptions) {
     this.options = options;
     this.canvas = options.canvas;
+    this.dungeonSceneSeed = resolveSeed(options.seed);
     this.rendererBundle = createRenderer(options.canvas);
     this.renderer = this.rendererBundle.renderer;
     this.scene = new Scene();
@@ -114,10 +134,19 @@ export class Engine {
     progress('engine', 0.24);
 
     progress('textures', 0.3);
-    const scene = new TestScene(this.physicsWorld);
+    const scene = new DungeonScene({
+      physics: this.physicsWorld,
+      seed: this.dungeonSceneSeed,
+      onNotify: (message) => this.options.onMessage?.(message),
+    });
     this.physicsWorld.primeQueries();
     this.gameScene = scene;
+    if (this.physicsDebugRequested) scene.setPhysicsDebug?.(true);
     this.scene.add(scene.root);
+    // The renderer reads background/fog from the scene it renders, not from the
+    // child root, so the scene's atmosphere has to be lifted one level up.
+    this.scene.background = scene.root.background;
+    this.scene.fog = scene.root.fog;
     scene.applyQuality(this.quality.preset);
     applyShadowPreset(this.renderer, this.quality.preset);
     await yieldToBrowser();
@@ -212,9 +241,10 @@ export class Engine {
     return this.physicsWorld?.stepCount ?? 0;
   }
 
-  /** Dev-only collider wireframes (stage 3 validation). */
+  /** Dev-only collider wireframes. */
   setPhysicsDebug(enabled: boolean): void {
-    if (this.gameScene instanceof TestScene) this.gameScene.setPhysicsDebug(enabled);
+    this.gameScene?.setPhysicsDebug?.(enabled);
+    this.physicsDebugRequested = enabled;
   }
 
   /** Scene diagnostics for the dev bridge; null before the scene is built. */

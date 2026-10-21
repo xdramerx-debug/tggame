@@ -17,6 +17,16 @@ export interface DebugSceneSnapshot {
   readonly canInteract: boolean;
   /** Ground contact reported by the character controller. */
   readonly grounded: boolean;
+  /** Current dungeon floor (1-based) when the scene has floors. */
+  readonly floor?: number;
+  /** Room count of the loaded floor. */
+  readonly rooms?: number;
+  /** Doorway count of the loaded floor. */
+  readonly doors?: number;
+  /** Point lights currently enabled (must stay ≤ 4 on medium/high). */
+  readonly activeLights?: number;
+  /** Room id the player is standing in, or null in a corridor. */
+  readonly roomId?: number | null;
 }
 
 /** Camera-relative stick input converted into world space by the engine. */
@@ -44,6 +54,8 @@ export interface GameScene {
   fixedUpdate?(stepSeconds: number): void;
   /** Collider excluded from the camera boom raycast (the player capsule). */
   getPlayerCollider?(): Collider | null;
+  /** Dev-only collider wireframes. */
+  setPhysicsDebug?(enabled: boolean): void;
   /** Locomotion command, already resolved to world space by the engine. */
   setMoveInput(command: MoveCommand): void;
   /** Player action from the touch HUD (attack, dodge, interact, skills). */

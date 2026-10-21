@@ -13,6 +13,10 @@ export interface GameState {
   /** Latest frame stats (throttled to 4 Hz by the engine). */
   stats: FrameStats | null;
   quality: QualityLevel;
+  /** Short HUD toast (floor change, blocked interaction); auto-clears. */
+  message: { readonly id: number; readonly text: string } | null;
+  showMessage: (text: string) => void;
+  clearMessage: () => void;
   setScreen: (screen: ScreenName) => void;
   setProgress: (progress: InitProgress) => void;
   setBooted: (booted: boolean) => void;
@@ -31,6 +35,9 @@ export const useGameStore = create<GameState>()((set) => ({
   bootError: null,
   stats: null,
   quality: 'medium',
+  message: null,
+  showMessage: (text) => set({ message: { id: Date.now() + Math.random(), text } }),
+  clearMessage: () => set({ message: null }),
   setScreen: (screen) => set({ screen }),
   setProgress: (progress) => set({ progress }),
   setBooted: (booted) => set({ booted }),

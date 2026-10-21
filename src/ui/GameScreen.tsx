@@ -49,6 +49,27 @@ function Bar({ label, value, color }: { readonly label: string; readonly value: 
  * The HUD values are static until the survival systems arrive (stage 8); the
  * input layer underneath is already the final one.
  */
+/** Short-lived toast in the upper third; never blocks input (200 ms fade). */
+function HudToast(): ReactElement | null {
+  const message = useGameStore((state) => state.message);
+  const clearMessage = useGameStore((state) => state.clearMessage);
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => clearMessage(), 1800);
+    return () => window.clearTimeout(timer);
+  }, [message, clearMessage]);
+
+  if (!message) return null;
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-[22%] z-40 flex justify-center">
+      <p key={message.id} className="fade-enter hud-panel hud-outline px-4 py-2 text-center text-[13px] font-semibold text-gold">
+        {message.text}
+      </p>
+    </div>
+  );
+}
+
 export function GameScreen(): ReactElement {
   const setScreen = useGameStore((state) => state.setScreen);
   const interactionHint = useInteractionHint();
@@ -86,7 +107,7 @@ export function GameScreen(): ReactElement {
           <Bar label="HG" value={64} color="linear-gradient(90deg,#6b4e2e,#c9a227)" />
           <div className="mt-0.5 flex items-center gap-2">
             <span className="text-[11px] font-semibold text-gold">Lv.1</span>
-            <span className="text-[10px] uppercase tracking-widest text-[#5a6470]">Тест-арена</span>
+            <span className="text-[10px] uppercase tracking-widest text-[#5a6470]">Этаж 1</span>
           </div>
         </div>
 
@@ -113,11 +134,12 @@ export function GameScreen(): ReactElement {
         </div>
       </div>
 
+      <HudToast />
       <PerfOverlay />
 
       <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+6px)] z-0 flex justify-center">
         <p className="hud-panel hud-outline px-3 py-1 text-center text-[11px] leading-snug text-[#9aa3ae]">
-          Этап 3 · Rapier: стены, колонны, автоподъём ступеней · ?physics=1
+          Этап 4 · BSP-подземелье: 7 комнат, двери, факелы · ?seed=42
         </p>
       </div>
     </div>

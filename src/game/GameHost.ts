@@ -8,6 +8,7 @@ export interface GameHostCallbacks {
   readonly onProgress?: (progress: InitProgress) => void;
   readonly onStats?: (stats: FrameStats) => void;
   readonly onQualityChange?: (level: QualityLevel) => void;
+  readonly onMessage?: (message: string) => void;
 }
 
 /**
@@ -61,6 +62,7 @@ class GameHost {
           this.callbacks.onQualityChange?.(level);
           hapticSelection();
         },
+        onMessage: (message) => this.callbacks.onMessage?.(message),
       });
       await engine.init();
       if (this.pendingQuality) engine.setQuality(this.pendingQuality);

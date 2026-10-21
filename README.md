@@ -2,7 +2,7 @@
 
 **Мобильный 3D roguelite survival RPG для Telegram Mini Apps.** Только телефон, только landscape, только касания.
 
-> Статус: **этап 3 из 13 — физика и character controller**. Движок, ввод, мобильный слой и Telegram готовы; сцена работает на Rapier3D: капсульный контроллер, стены, колонны, автоподъём ступеней, камера-raycast. Дальше — BSP-подземелье (см. дорожную карту).
+> Статус: **этап 4 из 13 — процедурное BSP-подземелье**. Движок, ввод, мобильный слой, Telegram и физика готовы; игра запускается в сгенерированном подземелье (7 комнат, 9–19 дверей, свет по бюджету, туман), по нему можно ходить, а руна выхода ведёт на следующий этаж. Дальше — Blender-пайплайн и боёвка (см. дорожную карту).
 
 ---
 
@@ -13,7 +13,8 @@
 - **Пост-обработка**: UnrealBloom (0.4 / порог 0.85) + Vignette + FilmGrain (0.02) + FXAA; SSAO только на high.
 - **Адаптивное качество**: пресеты high / medium / low, авто-понижение при FPS < 45, защита от осцилляции (8 с между переключениями), ручной выбор в настройках.
 - **Мобильный слой**: принудительный landscape (Telegram + Screen Orientation API + CSS-оверлей «Поверните телефон»), safe-area через `env()` и Telegram insets, Screen Wake Lock, пауза по `visibilitychange`/`blur`/`pagehide`, запрет контекстного меню, double-tap zoom, pinch-zoom страницы и pull-to-refresh.
-- **Тестовая арена**: PBR-материалы с процедурными (Canvas2D) albedo/normal/roughness, instanced-колонны, мерцающие факелы (2 PointLight), emissive-кристаллы, `FogExp2 0.04` — валидация теней, блума и бюджетов сцены.
+- **Процедурное подземелье (этап 4)**: BSP на 56×56 тайлов, 7 комнат, коридоры 2 м по MST с петлями, типы комнат из `src/data/rooms.json` (боевая, сокровищница, привал, алтарь + вход/выход), потолки 3–5 м, двери с открыванием по приближению, мебель и колонны instanced, свет по бюджету тарифа, `FogExp2 0.04`, спуск на следующий этаж через руну выхода. Детерминированность по сиду (`?seed=1234`).
+- **PBR-материалы** с процедурными (Canvas2D) albedo/normal/roughness и UV в мировых координатах (0.5 UV/м) — текстура не «сетит» на стыках тайлов.
 - **Telegram**: авто-тема (`themeParams`), haptic-обёртка (только `HapticFeedback`, без `navigator.vibrate`), MainButton/BackButton, fullscreen, `disableVerticalSwipes`, подтверждение закрытия.
 - **Настройки** (чувствительность камеры, размер кнопок, левша/правша, авто-атака, прозрачность HUD, вибро, качество, инверсия Y) с сохранением в IndexedDB (Dexie, схема из ТЗ).
 - **Splash по стадиям** (движок → текстуры → модели → звук) с реальным прогрессом загрузки.
@@ -65,7 +66,9 @@ src/
 │   ├── core/        Engine, Renderer, Loop, CameraRig, Quality, PerfMonitor
 │   ├── physics/     PhysicsWorld (Rapier), CharacterBody, FixedStep, капсулы
 │   ├── visual/      PostFX, PhysicsDebug, процедурные текстуры и карты нормалей
-│   ├── scenes/      TestScene, далее Dungeon (этап 4)
+│   ├── entities/    PlayerController (капсула, рывок, атака), placeholder-герой
+│   ├── scenes/      DungeonScene (этап 4), TestScene (эталон этапа 3)
+│   ├── world/       bsp, DungeonGenerator, DungeonMesh, Door, Props, RoomLights, gridRects
 │   └── GameHost.ts  синглтон canvas + engine
 ├── input/           VirtualJoystick, CameraSwipe, CooldownTracker, InputLayer, TouchButton
 ├── mobile/          orientation, safeArea, wakeLock, fullscreen, gestures, lifecycle
@@ -82,11 +85,12 @@ src/
 
 | Метрика | Бюджет | Сейчас (этап 1) |
 | --- | --- | --- |
-| Bundle gzip | < 3 MB | **~1.9 MB** (Rapier WASM 1.67 MB в отдельном ленивом чанке) |
-| Draw calls | < 100 | ~11 в тестовой сцене (плюс линия коллайдеров в dev) |
-| Physics | фикс. 60 Гц | 60 Гц, ≤4 подшага/кадр, 16 статических коллайдеров |
+| Bundle gzip | < 3 MB | **~1.9 MB** (Rapier WASM 1.67 MB в отдельном ленивом чанке, приложение ~104 kB) |
+| Draw calls | < 100 | ~20 на этаж (3 merged + ~10 instanced + двери); линия коллайдеров только в dev |
+| Physics | фикс. 60 Гц | 60 Гц, ≤4 подшага/кадр, ~50–80 статических коллайдеров этажа |
+| Point lights | ≤ 4 (high/medium), ≤ 2 (low) | ровно по бюджету: факел + ближайшие комнаты + руна выхода |
 | Input UI per frame | без React-рендеров | rAF пишет transform/CSS-переменные |
-| Tris на сцене | < 120k | ~6k |
+| Tris на сцене | < 120k | ~10–20k на этаж |
 | Первый экран | < 2.5 с | splash скрывается сразу после boot движка |
 | Пресеты | high/medium/low | авто-переключение по FPS |
 
@@ -99,9 +103,7 @@ src/
 | 1 | Bootstrap mobile-first, движок, камера, пресеты, CI | ✅ |
 | 2 | PointerEvents-фреймворк, джойстик, свайп-камера, кнопки, multitouch | ✅ |
 | 3 | Rapier3D, капсульный контроллер, коллизии, камера-raycast | ✅ |
-| 3 | Rapier + character controller | ✅ |
-| 4 | BSP-подземелье | ⏳ |
-| 4 | BSP-подземелье: комнаты, коридоры, двери, свет, туман | ⏳ |
+| 4 | BSP-подземелье: комнаты, коридоры, двери, свет, туман | ✅ |
 | 5–7 | Blender-пайплайн, боёвка, лут и инвентарь | ⏳ |
 | 8–10 | Выживание, контент, аудио | ⏳ |
 | 11–13 | Полиш, Telegram UX, оптимизация и релиз | ⏳ |

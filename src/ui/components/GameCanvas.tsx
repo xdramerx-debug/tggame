@@ -19,14 +19,16 @@ export function GameCanvas(): ReactElement {
   const setBootError = useGameStore((state) => state.setBootError);
   const setStats = useGameStore((state) => state.setStats);
   const setQuality = useGameStore((state) => state.setQuality);
+  const showMessage = useGameStore((state) => state.showMessage);
 
   useEffect(() => {
     gameHost.setCallbacks({
       onProgress: (progress) => setProgress(progress),
       onStats: (stats) => setStats(stats),
       onQualityChange: (level) => setQuality(level),
+      onMessage: (message) => showMessage(message),
     });
-  }, [setProgress, setStats, setQuality]);
+  }, [setProgress, setStats, setQuality, showMessage]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
