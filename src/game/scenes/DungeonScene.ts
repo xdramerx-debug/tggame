@@ -324,7 +324,7 @@ export class DungeonScene implements GameScene {
 
   /** Budget for room lights: the tier's cap minus the reserved exit-rune slot. */
   private roomLightBudget(preset: QualityPreset): number {
-    return Math.max(2, preset.maxPointLights - 1);
+    return Math.max(1, preset.maxPointLights - 1);
   }
 
   private updateExitGlow(feet: { x: number; z: number }): void {

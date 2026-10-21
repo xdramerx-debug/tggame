@@ -40,9 +40,15 @@ export function GameCanvas(): ReactElement {
         const engine = await gameHost.boot();
         if (!cancelled) {
           setBooted(true);
-          // Apply the persisted quality preference once the renderer exists.
-          const preference = useSettingsStore.getState().quality;
-          if (preference !== 'auto') engine.setQuality(preference);
+          // `?quality=` wins over the stored preference: QA and the E2E suite
+          // pin a tier instead of waiting for auto-degradation on slow GPUs.
+          const override = new URLSearchParams(window.location.search).get('quality');
+          const stored = useSettingsStore.getState().quality;
+          if (override === 'low' || override === 'medium' || override === 'high') {
+            engine.setQuality(override);
+          } else if (stored !== 'auto') {
+            engine.setQuality(stored);
+          }
           engine.pause();
         }
       } catch (error) {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import { bootIntoRun as boot, pointer, readState, waitForPhysicsSteps } from './helpers';
 
 /**
  * Multi-touch acceptance tests.
@@ -8,62 +8,11 @@ import type { Page } from '@playwright/test';
  * pointer), and CDP touch dispatch is Chromium-only. The input layer consumes
  * PointerEvents exclusively, so synthetic PointerEvents with distinct
  * `pointerId`s exercise exactly the same code path on both engines.
+ *
+ * Movement is asserted in simulation steps, not wall-clock time: CI renders with
+ * software WebGL, so a 600 ms wait may advance the fixed step by only a few ticks.
  */
-
-async function bootIntoRun(page: Page): Promise<void> {
-  await page.goto('/');
-  await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId('menu-Начать забег').click();
-  await expect(page.getByTestId('game-canvas')).toBeVisible();
-  await expect(page.getByTestId('perf-overlay')).toBeVisible({ timeout: 15_000 });
-  await expect.poll(async () => page.evaluate(() => window.__TENEBRIS__?.getState()?.fps ?? 0)).toBeGreaterThan(0);
-}
-
-interface SceneState {
-  hero: { x: number; y: number; z: number };
-  attacks: number;
-  collected: number;
-  canInteract: boolean;
-}
-
-async function readState(page: Page): Promise<{
-  camera: { yaw: number; pitch: number; distance: number };
-  scene: SceneState;
-}> {
-  const state = await page.evaluate(() => window.__TENEBRIS__?.getState() ?? null);
-  if (!state) throw new Error('debug bridge is not installed');
-  return { camera: state.camera, scene: state.scene };
-}
-
-/** Dispatches a PointerEvent in the page (shared by all gesture helpers). */
-async function pointer(
-  page: Page,
-  testId: string,
-  type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
-  pointerId: number,
-  x: number,
-  y: number,
-): Promise<void> {
-  await page.evaluate(
-    ({ testId: id, type: eventType, pointerId: pid, x: clientX, y: clientY }) => {
-      const element = document.querySelector(`[data-testid="${id}"]`);
-      if (!element) throw new Error(`missing element ${id}`);
-      element.dispatchEvent(
-        new PointerEvent(eventType, {
-          pointerId: pid,
-          pointerType: 'touch',
-          isPrimary: pid === 1,
-          clientX,
-          clientY,
-          bubbles: true,
-          cancelable: true,
-          buttons: eventType === 'pointerup' ? 0 : 1,
-        }),
-      );
-    },
-    { testId, type, pointerId, x, y },
-  );
-}
+const bootIntoRun = boot;
 
 test.describe('touch input', () => {
   test('three fingers: move, rotate the camera and attack at once', async ({ page }) => {
@@ -88,7 +37,7 @@ test.describe('touch input', () => {
     // Finger 3 — attack button.
     await pointer(page, 'action-attack', 'pointerdown', 3, size.width - 60, size.height - 60);
 
-    await page.waitForTimeout(600);
+    await waitForPhysicsSteps(page, 20);
     const during = await readState(page);
 
     expect(during.scene.attacks).toBeGreaterThan(initial.scene.attacks);
@@ -153,15 +102,21 @@ test.describe('touch input', () => {
 
     await pointer(page, 'camera-zone', 'pointerdown', 31, cx - 40, cy);
     await pointer(page, 'camera-zone', 'pointerdown', 32, cx + 40, cy);
-    // Spread fingers apart → zoom out.
+    // Spread fingers apart → camera moves closer (pinch-out zooms in), and the
+    // distance shrinks by the per-event pinch factor, independent of walls.
     await pointer(page, 'camera-zone', 'pointermove', 31, cx - 70, cy);
     await pointer(page, 'camera-zone', 'pointermove', 32, cx + 70, cy);
-    await page.waitForTimeout(80);
-    const after = await readState(page);
-    expect(after.camera.distance).toBeGreaterThan(before.camera.distance);
+    const closer = await readState(page);
+    expect(closer.camera.distance).toBeLessThan(before.camera.distance);
 
-    await pointer(page, 'camera-zone', 'pointerup', 31, cx - 70, cy);
-    await pointer(page, 'camera-zone', 'pointerup', 32, cx + 70, cy);
+    // Pinch back in → camera pulls away again.
+    await pointer(page, 'camera-zone', 'pointermove', 31, cx - 20, cy);
+    await pointer(page, 'camera-zone', 'pointermove', 32, cx + 20, cy);
+    const farther = await readState(page);
+    expect(farther.camera.distance).toBeGreaterThan(closer.camera.distance);
+
+    await pointer(page, 'camera-zone', 'pointerup', 31, cx - 20, cy);
+    await pointer(page, 'camera-zone', 'pointerup', 32, cx + 20, cy);
   });
 
   test('every action button exposes a ≥48 px touch target', async ({ page }) => {

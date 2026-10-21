@@ -15,7 +15,7 @@ test.describe('TENEBRIS bootstrap', () => {
     });
 
     const startedAt = Date.now();
-    await page.goto('/');
+    await page.goto('/?quality=low');
     await expect(page.getByTestId('splash')).toBeVisible();
 
     // Splash must not flash: minimum dwell is 900 ms, engine boot included.
@@ -31,7 +31,7 @@ test.describe('TENEBRIS bootstrap', () => {
   });
 
   test('renders the test arena and exposes live frame stats', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/?quality=low');
     await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 15_000 });
     await page.getByTestId('menu-Начать забег').click();
 
@@ -73,7 +73,7 @@ test.describe('TENEBRIS bootstrap', () => {
   });
 
   test('pauses back to the menu without errors', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/?quality=low');
     await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 15_000 });
     await page.getByTestId('menu-Начать забег').click();
     await expect(page.getByTestId('game-canvas')).toBeVisible();
@@ -84,7 +84,7 @@ test.describe('TENEBRIS bootstrap', () => {
 
   test('blocks the game in portrait with the rotate overlay', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/');
+    await page.goto('/?quality=low');
     await expect(page.getByTestId('orientation-overlay')).toBeVisible();
     await expect(page.getByTestId('orientation-overlay')).toContainText('Поверните телефон');
 
@@ -93,7 +93,7 @@ test.describe('TENEBRIS bootstrap', () => {
   });
 
   test('guards browser gestures that would break gameplay', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/?quality=low');
     await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 15_000 });
 
     const prevented = await page.evaluate(() => {
