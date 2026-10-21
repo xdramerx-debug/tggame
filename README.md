@@ -1,2 +1,0 @@
-# tggame
-Telegram game
