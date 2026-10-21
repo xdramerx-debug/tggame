@@ -15,7 +15,13 @@ import { applySafeAreaInsets, disableVerticalSwipes } from './telegram/viewport'
  * so React's first render already has correct CSS variables.
  */
 function bootstrap(): void {
-  initTelegram();
+  // Telegram SDK failures must never prevent the game from starting: every
+  // wrapper degrades to a no-op outside a supported client.
+  try {
+    initTelegram();
+  } catch (error) {
+    console.warn('[boot] Telegram init skipped', error);
+  }
   applyThemeToDocument();
   applySafeAreaInsets();
   disableVerticalSwipes();

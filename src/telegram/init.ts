@@ -61,6 +61,15 @@ function buildMockLaunchParams(): URLSearchParams {
   return params;
 }
 
+/** Reads an SDK availability flag without ever throwing. */
+function safeBool(read: () => boolean): boolean {
+  try {
+    return read();
+  } catch {
+    return false;
+  }
+}
+
 /** Safe wrapper: unsupported methods throw inside Telegram SDK, we never let that break boot. */
 function attempt<T>(fn: () => T): T | null {
   try {
@@ -108,14 +117,14 @@ export function initTelegram(): TelegramInitResult {
 
   initialized = {
     inTelegram,
-    themeApplied: isThemeParamsMounted(),
+    themeApplied: safeBool(isThemeParamsMounted),
     mounted: {
       // Re-read the mounted flags: mount() may resolve synchronously or not at all.
-      viewport: mounted.viewport && isViewportMounted(),
-      themeParams: mounted.themeParams && isThemeParamsMounted(),
-      backButton: mounted.backButton && isBackButtonMounted(),
-      mainButton: mounted.mainButton && isMainButtonMounted(),
-      haptics: mounted.haptics || isHapticFeedbackSupported(),
+      viewport: mounted.viewport && safeBool(isViewportMounted),
+      themeParams: mounted.themeParams && safeBool(isThemeParamsMounted),
+      backButton: mounted.backButton && safeBool(isBackButtonMounted),
+      mainButton: mounted.mainButton && safeBool(isMainButtonMounted),
+      haptics: mounted.haptics || safeBool(isHapticFeedbackSupported),
       closingBehavior: mounted.closingBehavior,
       swipeBehavior: mounted.swipeBehavior,
     },
