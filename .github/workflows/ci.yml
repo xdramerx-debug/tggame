@@ -53,7 +53,12 @@ jobs:
       - name: Install browsers
         run: npx playwright install --with-deps chromium webkit
       - name: Run mobile E2E
-        run: npx playwright test
+        run: npx playwright test --reporter=list,json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/e2e.json
+      - name: Annotate E2E failures
+        if: failure()
+        run: node scripts/ci-annotate-playwright.mjs test-results/e2e.json
       - name: Upload report
         if: failure()
         uses: actions/upload-artifact@v4
