@@ -139,7 +139,7 @@ export function GameScreen(): ReactElement {
 
       <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+6px)] z-0 flex justify-center">
         <p className="hud-panel hud-outline px-3 py-1 text-center text-[11px] leading-snug text-[#9aa3ae]">
-          Этап 4 · BSP-подземелье: 7 комнат, двери, факелы · ?seed=42
+          Этап 5 · GLB-герой со скелетной анимацией · ?seed=42 · ?quality=low
         </p>
       </div>
     </div>

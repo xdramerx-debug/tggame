@@ -1,7 +1,7 @@
 {
   "name": "tenebris",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "TENEBRIS — mobile-only 3D roguelite survival RPG for Telegram Mini Apps",
   "engines": {
@@ -13,6 +13,9 @@
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
+    "assets": "tsx scripts/build-assets.ts",
+    "predev": "npm run assets",
+    "prebuild": "npm run assets",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -40,6 +43,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "postcss": "^8.5.31",
     "tailwindcss": "^3.4.19",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.0",
     "vite": "^8.3.5",

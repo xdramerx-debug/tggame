@@ -1,6 +1,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { PhysicsWorld } from '@/game/physics';
 import { DungeonScene } from '@/game/scenes/DungeonScene';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { LoadedCharacter } from '@/game/assets/AssetLoader';
 
 /**
  * Whole-floor smoke test: generator + mesh + colliders + doors + props + lights
@@ -33,6 +37,19 @@ function installCanvasStub(): () => void {
   return () => {
     (globalThis as { document?: unknown }).document = previous;
   };
+}
+
+/** Loads the generated hero GLB from disk, if the asset pipeline ran. */
+async function loadHero(): Promise<LoadedCharacter | null> {
+  const path = join(process.cwd(), 'public', 'assets', 'models', 'hero.glb');
+  try {
+    const buffer = readFileSync(path);
+    const array = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    const gltf = await new GLTFLoader().parseAsync(array, '');
+    return { scene: gltf.scene, animations: gltf.animations };
+  } catch {
+    return null;
+  }
 }
 
 describe('DungeonScene (headless)', () => {
@@ -71,6 +88,32 @@ describe('DungeonScene (headless)', () => {
     expect(scene.getDebugSnapshot().grounded).toBe(true);
     scene.dispose();
     expect(scene.root.children.length).toBe(0);
+  });
+
+  it('uses the generated GLB hero when one is provided', async () => {
+    const hero = await loadHero();
+    if (!hero) {
+      // Without `npm run assets` the scene must stay playable on the placeholder.
+      const scene = new DungeonScene({ physics, seed: 5 });
+      expect(scene.getDebugSnapshot().heroAsset).toBe('placeholder');
+      scene.dispose();
+      return;
+    }
+    const scene = new DungeonScene({ physics, seed: 5, hero });
+    expect(scene.getDebugSnapshot().heroAsset).toBe('gltf');
+    expect(scene.getDebugSnapshot().heroState).toBe('idle');
+
+    scene.setMoveInput({ x: 0, z: -1, magnitude: 1 });
+    for (let i = 0; i < 20; i += 1) {
+      physics.step(1 / 60);
+      scene.update(1 / 60, i / 60);
+    }
+    expect(['walk', 'run']).toContain(scene.getDebugSnapshot().heroState);
+
+    scene.triggerAction('attack');
+    scene.update(1 / 60, 0.5);
+    expect(scene.getDebugSnapshot().heroState).toBe('attack');
+    scene.dispose();
   });
 
   it('simulates the player through the fixed step and keeps them grounded', () => {

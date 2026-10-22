@@ -11,6 +11,8 @@ export const PLAYER_TUNING = {
   gravity: -18,
   /** Seconds of invulnerability granted by the dash (spec: 0.4 s). */
   iFrames: 0.4,
+  /** Swing + recovery window of a basic attack, seconds. */
+  attackDuration: 0.28,
 } as const;
 
 export interface PlayerControllerOptions {
@@ -65,7 +67,7 @@ export class PlayerController {
   }
 
   get attackProgress(): number {
-    return this.attackRemaining > 0 ? 1 - this.attackRemaining / 0.28 : 0;
+    return this.attackRemaining > 0 ? 1 - this.attackRemaining / PLAYER_TUNING.attackDuration : 0;
   }
 
   get isInvulnerable(): boolean {
@@ -80,6 +82,15 @@ export class PlayerController {
     return this.dashRemaining > 0 ? 1 : this.move.magnitude;
   }
 
+  /**
+   * Current horizontal speed in m/s, i.e. what the animation state machine needs
+   * to pick between idle, walk and run. Dashing always reports the dash speed.
+   */
+  get speed(): number {
+    if (this.dashRemaining > 0) return PLAYER_TUNING.dashSpeed;
+    return this.move.magnitude * PLAYER_TUNING.walkSpeed;
+  }
+
   /** Camera-resolved movement command from the input layer. */
   setMoveInput(command: MoveCommand): void {
     this.move = command;
@@ -89,7 +100,7 @@ export class PlayerController {
   /** @returns true when the attack started (always, until combat cancels it) */
   startAttack(): boolean {
     this.attackCount += 1;
-    this.attackRemaining = 0.28;
+    this.attackRemaining = PLAYER_TUNING.attackDuration;
     return true;
   }
 

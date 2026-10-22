@@ -20,8 +20,9 @@ import type { DebugSceneSnapshot, GameScene, MoveCommand } from '@/types/scene';
 import type { InputAction, InteractionHint } from '@/input/types';
 import type { PhysicsWorld } from '@/game/physics';
 import { PlayerController } from '@/game/entities/PlayerController';
-import { createPlaceholderHero, placeHero } from '@/game/entities/PlaceholderHero';
-import type { PlaceholderHero } from '@/game/entities/PlaceholderHero';
+import { createHeroView, placeHeroView } from '@/game/entities/HeroView';
+import type { HeroView } from '@/game/entities/HeroView';
+import type { LoadedCharacter } from '@/game/assets/AssetLoader';
 import { QUALITY_PRESETS } from '@/game/core/Quality';
 import { createStoneTextures } from '@/game/visual/textures/proceduralTextures';
 import { PhysicsDebugView } from '@/game/visual/PhysicsDebug';
@@ -48,6 +49,8 @@ export interface DungeonSceneOptions {
   /** Toasts (floor changes, blocked stairs). */
   readonly onNotify?: (message: string) => void;
   readonly onFloorChange?: (floor: number) => void;
+  /** Generated hero model; the primitive placeholder is used when absent. */
+  readonly hero?: LoadedCharacter | null;
 }
 
 const EXIT_RANGE = 2.4;
@@ -71,7 +74,7 @@ export class DungeonScene implements GameScene {
   private readonly textures = createStoneTextures({ size: 256, seed: 4242, repeat: 1 });
   private readonly materials: DungeonMaterials;
   private readonly doorAssets: DoorAssets;
-  private readonly hero: PlaceholderHero;
+  private readonly hero: HeroView;
   private readonly player: PlayerController;
   private readonly hemisphere: HemisphereLight;
   private readonly keyLight: DirectionalLight;
@@ -90,6 +93,8 @@ export class DungeonScene implements GameScene {
   private exitDisposables: { dispose(): void }[] = [];
   private triangleCount = 0;
   private quality: QualityPreset | null = null;
+  private lastAttackCount = 0;
+  private lastDodging = false;
 
   constructor(options: DungeonSceneOptions) {
     this.options = options;
@@ -128,7 +133,7 @@ export class DungeonScene implements GameScene {
 
     this.dungeon = DungeonGenerator.generate({ seed, floor });
     this.player = new PlayerController({ physics: this.physics, spawn: this.dungeon.entrance });
-    this.hero = createPlaceholderHero();
+    this.hero = createHeroView(options.hero ?? null);
     this.root.add(this.hero.group);
 
     this.root.add(this.floorsGroup);
@@ -214,6 +219,8 @@ export class DungeonScene implements GameScene {
       doors: this.dungeon.doors.length,
       activeLights: this.lights?.activeCount ?? 0,
       roomId: room?.id ?? null,
+      heroAsset: this.hero.kind,
+      heroState: this.hero.state,
     };
   }
 
@@ -235,13 +242,18 @@ export class DungeonScene implements GameScene {
 
   update(dt: number, elapsed: number): void {
     const feet = this.player.feet;
-    placeHero(this.hero.group, feet, this.player.facing);
-    this.hero.update(
-      dt,
-      elapsed,
-      this.player.speedMagnitude > 0.05,
-      this.player.isDodging ? 0 : this.player.attackProgress,
-    );
+    placeHeroView(this.hero, feet, this.player.facing);
+
+    // Drive the animation from edges in the controller state: the model plays a
+    // full swing/roll clip, while the controller keeps its own short timers.
+    if (this.player.attacks !== this.lastAttackCount) {
+      this.lastAttackCount = this.player.attacks;
+      this.hero.attack();
+    }
+    if (this.player.isDodging && !this.lastDodging) this.hero.dodge();
+    this.lastDodging = this.player.isDodging;
+
+    this.hero.update(dt, elapsed, this.player.speed, this.player.isDodging || this.player.isAttacking);
 
     for (const door of this.doors) door.update(dt, feet);
 
@@ -318,7 +330,7 @@ export class DungeonScene implements GameScene {
 
   private placeHeroAtSpawn(): void {
     const spawn = this.dungeon.entrance;
-    placeHero(this.hero.group, { x: spawn.x, y: 0.08, z: spawn.z }, this.player.facing);
+    placeHeroView(this.hero, { x: spawn.x, y: 0.08, z: spawn.z }, this.player.facing);
     this.followTarget.set(spawn.x, 1.15, spawn.z);
   }
 

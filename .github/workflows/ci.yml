@@ -21,6 +21,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Models are generated, not committed: the pipeline must be reproducible.
+      - name: Build assets
+        run: npm run assets
       - name: TypeScript strict (no any)
         run: npm run typecheck
       - name: ESLint
@@ -28,7 +31,7 @@ jobs:
       - name: Vitest
         run: npm run test
       - name: Production build
-        run: npx vite build
+        run: npm run build
       - name: Bundle budget (< 3 MB gzip)
         run: npm run size
       - name: Upload build artifact
@@ -50,6 +53,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Build assets
+        run: npm run assets
       - name: Install browsers
         run: npx playwright install --with-deps chromium webkit
       - name: Run mobile E2E

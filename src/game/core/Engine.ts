@@ -12,6 +12,7 @@ import { CameraRig } from './CameraRig';
 import { PostFX } from '@/game/visual/PostFX';
 import { DungeonScene } from '@/game/scenes/DungeonScene';
 import { PhysicsWorld } from '@/game/physics';
+import { AssetLoader } from '@/game/assets/AssetLoader';
 
 export interface EngineOptions {
   readonly canvas: HTMLCanvasElement;
@@ -67,6 +68,7 @@ export class Engine {
   private gameScene: GameScene | null = null;
   private readonly dungeonSceneSeed: number;
   private physicsWorld: PhysicsWorld | null = null;
+  private assetLoader: AssetLoader | null = null;
   private postfx: PostFX | null = null;
   private cleanup: (() => void)[] = [];
   private disposed = false;
@@ -102,6 +104,11 @@ export class Engine {
     });
   }
 
+  /** Asset cache, shared with later systems (monsters, loot). */
+  get assets(): AssetLoader | null {
+    return this.assetLoader;
+  }
+
   get qualityLevel(): QualityLevel {
     return this.quality.current;
   }
@@ -134,9 +141,25 @@ export class Engine {
     progress('engine', 0.24);
 
     progress('textures', 0.3);
+    // Generated GLB models. A failure here must not brick the game: the scene
+    // falls back to the primitive placeholder and logs the reason.
+    const assets = new AssetLoader();
+    this.assetLoader = assets;
+    progress('models', 0.34, 'Модели');
+    try {
+      await assets.preloadRun((state) => {
+        progress('models', 0.34 + (state.loaded / Math.max(1, state.total)) * 0.16, 'Модели');
+      });
+    } catch (error) {
+      console.warn('[assets] model preload failed, using placeholder hero', error);
+    }
+    const hero = assets.cloneCharacter('hero');
+    progress('models', 0.52);
+
     const scene = new DungeonScene({
       physics: this.physicsWorld,
       seed: this.dungeonSceneSeed,
+      hero,
       onNotify: (message) => this.options.onMessage?.(message),
     });
     this.physicsWorld.primeQueries();
@@ -151,7 +174,6 @@ export class Engine {
     applyShadowPreset(this.renderer, this.quality.preset);
     await yieldToBrowser();
 
-    progress('models', 0.55);
     this.postfx = new PostFX({
       renderer: this.renderer,
       scene: this.scene,
@@ -264,6 +286,8 @@ export class Engine {
     this.postfx = null;
     this.physicsWorld?.dispose();
     this.physicsWorld = null;
+    this.assetLoader?.dispose();
+    this.assetLoader = null;
     this.scene.clear();
     this.rendererBundle.dispose();
   }

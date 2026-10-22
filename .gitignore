@@ -12,6 +12,7 @@ test-results
 .vite
 .vercel
 public/assets/**/*.glb
+public/assets/manifest.json
 public/assets/**/*.ktx2
 public/assets/audio/*.wav
 public/assets/audio/*.ogg

@@ -27,6 +27,10 @@ export interface DebugSceneSnapshot {
   readonly activeLights?: number;
   /** Room id the player is standing in, or null in a corridor. */
   readonly roomId?: number | null;
+  /** Which hero representation is active: the generated GLB or the placeholder. */
+  readonly heroAsset?: 'gltf' | 'placeholder';
+  /** Animation state of the hero (idle/walk/run/attack/dodge/hit/death). */
+  readonly heroState?: string;
 }
 
 /** Camera-relative stick input converted into world space by the engine. */

@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import type { DebugSceneSnapshot } from '@/types/scene';
 
 /**
  * Shared E2E helpers.
@@ -24,19 +25,7 @@ export interface DebugState {
     readonly pitch: number;
     readonly distance: number;
   };
-  readonly scene: {
-    readonly hero: { readonly x: number; readonly y: number; readonly z: number };
-    readonly attacks: number;
-    readonly dodging: boolean;
-    readonly collected: number;
-    readonly canInteract: boolean;
-    readonly grounded: boolean;
-    readonly floor?: number;
-    readonly rooms?: number;
-    readonly doors?: number;
-    readonly activeLights?: number;
-    readonly roomId?: number | null;
-  };
+  readonly scene: DebugSceneSnapshot;
   readonly quality: string;
   readonly fps: number;
   readonly physicsSteps: number;
