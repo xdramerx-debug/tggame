@@ -18,6 +18,11 @@ async function pressTestId(page: Page, testId: string): Promise<void> {
  * Stage-9 acceptance: the third floor holds a real boss with a readable health
  * bar, and embers earned by a run can be spent in the altar.
  */
+/** Reads the dev-only economy view (null when the bridge is missing). */
+async function readMeta(page: Page): Promise<{ attempts: number; purchases: number; lastHint: string; levels: Record<string, number> } | null> {
+  return page.evaluate(() => window.__TENEBRIS_META__?.() ?? null);
+}
+
 test.describe('boss and meta progression', () => {
   test('the boss bar appears in the arena', async ({ page }) => {
     await bootIntoRun(page, { seed: 31, query: 'floor=3&boss=1' });
@@ -49,6 +54,11 @@ test.describe('boss and meta progression', () => {
   });
 
   test('embers can buy a level and the purchase is persisted', async ({ page }) => {
+    const logs: string[] = [];
+    page.on('pageerror', (error) => logs.push(`pageerror: ${error.message}`));
+    page.on('console', (message) => {
+      if (message.type() === 'error' || message.type() === 'warning') logs.push(message.text());
+    });
     await bootIntoRun(page, { seed: 4242, query: 'kill=1&embers=60' });
     await expect(page.getByTestId('death-screen')).toBeVisible();
     await pressTestId(page, 'death-altar');
@@ -60,6 +70,12 @@ test.describe('boss and meta progression', () => {
     const before = await page.getByTestId('meta-embers').innerText();
 
     await pressTestId(page, 'upgrade-buy-vitality');
+    // Diagnostics first: a swallowed tap and a refused purchase look identical
+    // from the outside, and the difference matters.
+    const meta = await readMeta(page);
+    const diagnostics = `${JSON.stringify(meta)} | logs: ${logs.join(' | ')}`;
+    expect(meta?.attempts ?? 0, `purchase was never called (${diagnostics})`).toBeGreaterThan(0);
+    expect(meta?.purchases ?? 0, `purchase refused (${diagnostics})`).toBeGreaterThan(0);
     await expect(page.getByTestId('upgrade-level-vitality')).toHaveText('1/5');
     // The price is actually deducted, not just the level bumped.
     expect(Number((await page.getByTestId('meta-embers').innerText()).replace(/\D/g, ''))).toBeLessThan(
