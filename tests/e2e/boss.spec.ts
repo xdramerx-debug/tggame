@@ -66,6 +66,9 @@ test.describe('boss and meta progression', () => {
     await pressTestId(page, 'death-altar');
     await expect(page.getByTestId('meta-screen')).toBeVisible();
 
+    // Exactly one altar tree: a duplicated screen (unmounted copy left by a
+    // screen transition) would take taps but never repaint.
+    await expect(page.getByTestId('meta-screen')).toHaveCount(1);
     // `?embers=60` is the dev pay-out hook: the first vitality level costs 12.
     const buy = page.getByTestId('upgrade-buy-vitality');
     await expect(buy).toHaveAttribute('data-affordable', 'true');

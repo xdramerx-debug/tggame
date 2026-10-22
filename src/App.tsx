@@ -144,19 +144,6 @@ export function App(): ReactElement {
           </motion.div>
         ) : null}
 
-        {screen === 'meta' ? (
-          <motion.div
-            key="meta"
-            className="absolute inset-0"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <MetaScreen onBack={() => setScreen('menu')} />
-          </motion.div>
-        ) : null}
-
         {screen === 'game' ? (
           <motion.div
             key="game"
@@ -167,6 +154,28 @@ export function App(): ReactElement {
             transition={{ duration: 0.2 }}
           >
             <GameScreen />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/*
+        The altar is an *overlay*, not a page in the main `AnimatePresence`:
+        `mode="wait"` has to finish the game screen's exit animation before it
+        mounts the next child, and a screen that is unmounted mid-transition can
+        leave a dead copy in the DOM — one that still reacts to the economy but
+        never repaints. A dedicated presence keeps exactly one altar tree alive.
+      */}
+      <AnimatePresence initial={false}>
+        {screen === 'meta' ? (
+          <motion.div
+            key="meta"
+            className="absolute inset-0 z-40"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <MetaScreen onBack={() => setScreen('menu')} />
           </motion.div>
         ) : null}
       </AnimatePresence>
