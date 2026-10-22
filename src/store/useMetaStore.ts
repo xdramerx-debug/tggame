@@ -8,6 +8,8 @@ const statsRepository = new StatsRepository();
 
 /** QA/Playwright view of the economy (dev builds only, read-only). */
 export interface MetaDebugSnapshot {
+  /** Module-instance id: catches a duplicated store between bundles/chunks. */
+  readonly storeId: string;
   readonly embers: number;
   readonly levels: Readonly<Record<string, number>>;
   /** Number of purchase calls received, and how many of them succeeded. */
@@ -21,6 +23,9 @@ declare global {
     __TENEBRIS_META__?: () => MetaDebugSnapshot;
   }
 }
+
+/** Unique per module instance; surfaced in the DOM and in the dev bridge. */
+export const META_STORE_ID = Math.random().toString(36).slice(2, 8);
 
 let attempts = 0;
 let purchases = 0;
@@ -51,6 +56,7 @@ function view(state: MetaState): Pick<MetaStoreState, 'embers' | 'upgrades' | 'l
 export const useMetaStore = create<MetaStoreState>()((set, get) => {
   if (import.meta.env.DEV && typeof window !== 'undefined') {
     window.__TENEBRIS_META__ = () => ({
+      storeId: META_STORE_ID,
       embers: get().embers,
       levels: Object.fromEntries(get().upgrades.map((upgrade) => [upgrade.id, upgrade.level])),
       attempts,

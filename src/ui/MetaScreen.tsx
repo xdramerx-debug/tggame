@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useReducer, useState } from 'react';
 import type { ReactElement } from 'react';
 import { motion } from 'framer-motion';
-import { useMetaStore } from '@/store/useMetaStore';
+import { META_STORE_ID, useMetaStore } from '@/store/useMetaStore';
 import { META_CURRENCY } from '@/game/meta/MetaState';
 import { hapticImpact } from '@/telegram/haptic';
 import { hideBackButton } from '@/telegram/buttons';
@@ -90,6 +90,10 @@ export function MetaScreen({ onBack }: { readonly onBack: () => void }): ReactEl
   const hydrate = useMetaStore((state) => state.hydrate);
   const purchase = useMetaStore((state) => state.purchase);
   const [hint, setHint] = useState<string | null>(null);
+  // Explicit invalidation after a purchase: the rows must repaint from the
+  // store even if the subscription callback was dropped by a re-mount during
+  // the screen transition. Rendering re-reads `getState()`, so this is cheap.
+  const [, invalidate] = useReducer((version: number) => version + 1, 0);
 
   useEffect(() => {
     hideBackButton();
@@ -114,10 +118,12 @@ export function MetaScreen({ onBack }: { readonly onBack: () => void }): ReactEl
       }
       if (!purchase(id)) {
         setHint(`Не хватает углей: нужно ${row.cost ?? 0}`);
+        invalidate();
         return;
       }
       hapticImpact('medium');
       setHint(`${row.label} → ур. ${row.level + 1}`);
+      invalidate();
     },
     [purchase],
   );
@@ -131,6 +137,7 @@ export function MetaScreen({ onBack }: { readonly onBack: () => void }): ReactEl
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
       data-testid="meta-screen"
+      data-store={META_STORE_ID}
     >
       <header className="flex items-end justify-between gap-3">
         <div>

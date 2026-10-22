@@ -11,7 +11,7 @@ import { CreditsSheet } from './ui/CreditsSheet';
 import { OrientationOverlay } from './ui/OrientationOverlay';
 import { useGameStore, useUiStore } from './store/useGameStore';
 import { useSettingsStore } from './store/useSettingsStore';
-import { useMetaStore } from './store/useMetaStore';
+import { useMetaStore } from '@/store/useMetaStore';
 import { gameHost } from './game/GameHost';
 import { installGestureGuards } from './mobile/gestures';
 import { installLifecycle } from './mobile/lifecycle';

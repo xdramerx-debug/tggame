@@ -19,7 +19,9 @@ async function pressTestId(page: Page, testId: string): Promise<void> {
  * bar, and embers earned by a run can be spent in the altar.
  */
 /** Reads the dev-only economy view (null when the bridge is missing). */
-async function readMeta(page: Page): Promise<{ attempts: number; purchases: number; lastHint: string; levels: Record<string, number> } | null> {
+async function readMeta(
+  page: Page,
+): Promise<{ storeId: string; attempts: number; purchases: number; lastHint: string; levels: Record<string, number> } | null> {
   return page.evaluate(() => window.__TENEBRIS_META__?.() ?? null);
 }
 
@@ -80,6 +82,7 @@ test.describe('boss and meta progression', () => {
         texts: nodes.map((node) => node.textContent),
         hint: document.querySelector('[data-testid="meta-hint"]')?.textContent ?? null,
         embers: document.querySelector('[data-testid="meta-embers"]')?.textContent ?? null,
+        store: document.querySelector('[data-testid="meta-screen"]')?.getAttribute('data-store') ?? null,
       };
     });
     const diagnostics = `${JSON.stringify(meta)} | dom: ${JSON.stringify(dom)} | logs: ${logs.join(' | ')}`;
@@ -87,6 +90,7 @@ test.describe('boss and meta progression', () => {
     expect(meta?.purchases ?? 0, `purchase refused (${diagnostics})`).toBeGreaterThan(0);
     // The store is the source of truth for the economy...
     expect(meta?.levels['vitality'] ?? 0, `store did not level up (${diagnostics})`).toBe(1);
+    expect(dom.store, `duplicate store module (${diagnostics})`).toBe(meta?.storeId);
     // ...and the altar must render it.
     await expect(page.getByTestId('upgrade-level-vitality'), diagnostics).toHaveText('1/5');
     // The price is actually deducted, not just the level bumped.
