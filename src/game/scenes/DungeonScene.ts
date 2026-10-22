@@ -19,10 +19,10 @@ import type { QualityPreset } from '@/types/engine';
 import type { DebugSceneSnapshot, GameScene, MoveCommand } from '@/types/scene';
 import type { InputAction, InteractionHint } from '@/input/types';
 import type { PhysicsWorld } from '@/game/physics';
-import { PlayerController } from '@/game/entities/PlayerController';
+import { PlayerController, PLAYER_TUNING } from '@/game/entities/PlayerController';
 import { createHeroView, placeHeroView } from '@/game/entities/HeroView';
 import type { HeroView } from '@/game/entities/HeroView';
-import type { LoadedCharacter } from '@/game/assets/AssetLoader';
+import type { AssetLoader, LoadedCharacter } from '@/game/assets/AssetLoader';
 import { QUALITY_PRESETS } from '@/game/core/Quality';
 import { createStoneTextures } from '@/game/visual/textures/proceduralTextures';
 import { PhysicsDebugView } from '@/game/visual/PhysicsDebug';
@@ -40,6 +40,15 @@ import { buildProps } from '@/game/world/Props';
 import type { PropsResult } from '@/game/world/Props';
 import { roomAt } from '@/game/world/dungeonTypes';
 import type { Dungeon, DungeonRoom } from '@/game/world/dungeonTypes';
+import { Enemy } from '@/game/entities/Enemy';
+import { EnemyDirector } from '@/game/world/EnemyDirector';
+import type { PlannedSpawn } from '@/game/world/EnemyDirector';
+import { monsterById } from '@/game/combat/monsterTable';
+import { HitEffects } from '@/game/visual/HitEffects';
+import { DamageNumbers } from '@/game/visual/DamageNumbers';
+import { PlayerStats, PLAYER_BASE } from '@/game/player/PlayerStats';
+import { PLAYER_ARC, targetsInArc } from '@/game/combat/meleeArc';
+import { rollDamage } from '@/game/combat/damage';
 
 export interface DungeonSceneOptions {
   readonly physics: PhysicsWorld;
@@ -51,10 +60,18 @@ export interface DungeonSceneOptions {
   readonly onFloorChange?: (floor: number) => void;
   /** Generated hero model; the primitive placeholder is used when absent. */
   readonly hero?: LoadedCharacter | null;
+  /** Asset cache used to instance enemy models (skipped when absent). */
+  readonly assets?: AssetLoader | null;
+  /** Haptics hook; the engine maps it to Telegram HapticFeedback. */
+  readonly onHaptic?: (kind: 'light' | 'medium' | 'heavy') => void;
 }
 
 const EXIT_RANGE = 2.4;
 const DEFAULT_MAX_FLOORS = 3;
+/** Fraction of the attack window after which the blade actually connects. */
+const STRIKE_FRACTION = 0.42;
+/** Enemies never act before the floor has been running for a moment. */
+const SPAWN_GRACE_SECONDS = 0.6;
 
 /**
  * Playable procedural dungeon floor.
@@ -96,6 +113,19 @@ export class DungeonScene implements GameScene {
   private lastAttackCount = 0;
   private lastDodging = false;
 
+  /** Player vitals (hp/stamina); separate from the `stats` diagnostics getter. */
+  readonly vitals = new PlayerStats();
+  private director: EnemyDirector | null = null;
+  private enemies: Enemy[] = [];
+  private readonly hitEffects: HitEffects;
+  private readonly damageNumbers: DamageNumbers;
+  private pendingStrike = -1;
+  private kills = 0;
+  private runXp = 0;
+  private deaths = 0;
+  private floorTime = 0;
+  private shakeStrength = 0;
+
   constructor(options: DungeonSceneOptions) {
     this.options = options;
     this.physics = options.physics;
@@ -135,6 +165,8 @@ export class DungeonScene implements GameScene {
     this.player = new PlayerController({ physics: this.physics, spawn: this.dungeon.entrance });
     this.hero = createHeroView(options.hero ?? null);
     this.root.add(this.hero.group);
+    this.hitEffects = new HitEffects(this.root, 40);
+    this.damageNumbers = new DamageNumbers(this.root);
 
     this.root.add(this.floorsGroup);
     this.floorsGroup.add(this.floorGroup);
@@ -181,9 +213,15 @@ export class DungeonScene implements GameScene {
   triggerAction(action: InputAction): void {
     switch (action) {
       case 'attack':
+        // Stamina gates the swing; an exhausted player still sees the animation
+        // but deals no damage, which reads better than a silently dead button.
         this.player.startAttack();
+        if (this.vitals.spendStamina(PLAYER_BASE.attackStamina)) {
+          this.pendingStrike = PLAYER_TUNING.attackDuration * STRIKE_FRACTION;
+        }
         break;
       case 'dodge':
+        if (!this.vitals.spendStamina(PLAYER_BASE.dodgeStamina)) break;
         this.player.startDash();
         break;
       case 'interact':
@@ -221,6 +259,13 @@ export class DungeonScene implements GameScene {
       roomId: room?.id ?? null,
       heroAsset: this.hero.kind,
       heroState: this.hero.state,
+      hp: Math.round(this.vitals.hp),
+      maxHp: this.vitals.maxHp,
+      stamina: Math.round(this.vitals.stamina),
+      kills: this.kills,
+      xp: this.runXp,
+      deaths: this.deaths,
+      enemies: this.enemies.filter((enemy) => !enemy.isDead).length,
     };
   }
 
@@ -238,6 +283,19 @@ export class DungeonScene implements GameScene {
 
   fixedUpdate(step: number): void {
     this.player.fixedUpdate(step);
+    this.vitals.tick(step);
+    this.floorTime += step;
+
+    if (this.pendingStrike >= 0) {
+      this.pendingStrike -= step;
+      if (this.pendingStrike <= 0) {
+        this.pendingStrike = -1;
+        this.resolvePlayerStrike();
+      }
+    }
+
+    this.updateEnemies(step);
+    if (this.vitals.isDead) this.handlePlayerDeath();
   }
 
   update(dt: number, elapsed: number): void {
@@ -256,6 +314,12 @@ export class DungeonScene implements GameScene {
     this.hero.update(dt, elapsed, this.player.speed, this.player.isDodging || this.player.isAttacking);
 
     for (const door of this.doors) door.update(dt, feet);
+    for (const enemy of this.enemies) {
+      const speed = enemy.brain.state === 'chase' ? enemy.definition.speed : 0;
+      enemy.update(dt, elapsed, speed);
+    }
+    this.hitEffects.update(dt);
+    this.damageNumbers.update(dt);
 
     this.lights?.update(dt, feet, elapsed);
     this.updateExitGlow(feet);
@@ -271,6 +335,9 @@ export class DungeonScene implements GameScene {
   dispose(): void {
     this.physics.onFixedStep(null);
     this.physicsDebug.dispose();
+    this.clearEnemies();
+    this.hitEffects.dispose();
+    this.damageNumbers.dispose();
     this.player.dispose();
     this.hero.dispose();
     this.unloadFloor();
@@ -370,10 +437,14 @@ export class DungeonScene implements GameScene {
     this.lights = lights;
     for (const light of lights.objects) this.root.add(light);
 
+    this.director = new EnemyDirector({ dungeon, floor: dungeon.floor, seed: dungeon.seed });
+    this.floorTime = 0;
     this.buildExitMarker(dungeon);
   }
 
   private unloadFloor(): void {
+    this.clearEnemies();
+    this.director = null;
     for (const door of this.doors) door.dispose();
     this.doors = [];
 
@@ -459,6 +530,219 @@ export class DungeonScene implements GameScene {
     this.exitGlow = null;
     for (const item of this.exitDisposables) item.dispose();
     this.exitDisposables = [];
+  }
+
+  // ---------------------------------------------------------------- combat
+
+  /** Applies the player's swing to every enemy inside the melee cone. */
+  private resolvePlayerStrike(): void {
+    const feet = this.player.feet;
+    const origin = { x: feet.x, z: feet.z };
+    const targets = this.enemies
+      .filter((enemy) => !enemy.isDead)
+      .map((enemy) => ({
+        id: enemy.id,
+        x: enemy.position.x,
+        z: enemy.position.z,
+        radius: enemy.radius,
+      }));
+    // A swing must not reach through a wall even when the cone covers the enemy.
+    const visible = this.enemies
+      .filter((enemy) => !enemy.isDead)
+      .filter((enemy) => this.hasLineOfSight(this.player.feet, enemy.position, enemy.collider));
+    const visibleIds = new Set(visible.map((enemy) => enemy.id));
+    const hits = targetsInArc(origin, this.player.facing, targets, PLAYER_ARC).filter((hit) =>
+      visibleIds.has(hit.id),
+    );
+    if (hits.length === 0) return;
+
+    for (const hit of hits) {
+      const enemy = this.enemies.find((candidate) => candidate.id === hit.id);
+      if (!enemy) continue;
+      const roll = rollDamage(this.vitals.attack, Math.random);
+      const result = enemy.takeDamage(roll.raw, origin, roll.critical);
+      if (result.applied <= 0) continue;
+
+      this.damageNumbers.show(
+        { x: enemy.position.x, y: 1.75, z: enemy.position.z },
+        Math.round(result.applied),
+        roll.critical,
+      );
+      this.hitEffects.burst(
+        { x: enemy.position.x, y: 1.1, z: enemy.position.z },
+        roll.critical ? 1.6 : 1,
+        result.killed ? 'blood' : 'spark',
+      );
+      this.options.onHaptic?.(roll.critical ? 'medium' : 'light');
+
+      if (result.killed) {
+        this.kills += 1;
+        this.runXp += enemy.definition.xp;
+        this.director?.markKilled(enemy.id);
+      }
+    }
+    this.shake(0.12);
+  }
+
+  private updateEnemies(step: number): void {
+    const director = this.director;
+    if (!director) return;
+    const feet = this.player.feet;
+
+    // Corpses are removed once their death animation has played out.
+    for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
+      const enemy = this.enemies[i];
+      if (!enemy) continue;
+      if (enemy.canBeRemoved) {
+        enemy.dispose();
+        this.enemies.splice(i, 1);
+      }
+    }
+
+    if (this.floorTime > SPAWN_GRACE_SECONDS) {
+      const decision = director.reconcile(
+        this.enemies.map((enemy) => ({
+          id: enemy.id,
+          x: enemy.position.x,
+          z: enemy.position.z,
+          dead: enemy.isDead,
+        })),
+        feet,
+      );
+      for (const id of decision.despawn) {
+        const index = this.enemies.findIndex((enemy) => enemy.id === id);
+        const [removed] = this.enemies.splice(index, 1);
+        removed?.dispose();
+      }
+      for (const planned of decision.spawn) this.spawnEnemy(planned);
+    }
+
+    for (const enemy of this.enemies) {
+      if (enemy.isDead) {
+        enemy.fixedUpdate(step, feet, false);
+        continue;
+      }
+      const distance = Math.hypot(enemy.position.x - feet.x, enemy.position.z - feet.z);
+      const los = distance < 2 ? true : this.hasLineOfSight(enemy.position, feet, enemy.collider);
+      enemy.fixedUpdate(step, feet, los);
+
+      if (enemy.takeStrike()) this.resolveEnemyStrike(enemy);
+    }
+  }
+
+  private spawnEnemy(planned: PlannedSpawn): void {
+    const assets = this.options.assets ?? null;
+    const definition = planned.definition;
+    const model = assets?.cloneCharacter(definition.model) ?? null;
+    const enemy = new Enemy({
+      definition,
+      model,
+      physics: this.physics,
+      spawn: { x: planned.x, z: planned.z },
+      index: planned.id,
+    });
+    this.root.add(enemy.group);
+    this.enemies.push(enemy);
+  }
+
+  private resolveEnemyStrike(enemy: Enemy): void {
+    const feet = this.player.feet;
+    const distance = Math.hypot(enemy.position.x - feet.x, enemy.position.z - feet.z);
+    if (distance > enemy.definition.attackRange + 0.5) return;
+    // Dash i-frames are absolute: dodging through a swing takes no damage.
+    if (this.player.isInvulnerable) return;
+
+    const result = this.vitals.takeDamage(enemy.definition.damage);
+    if (result.applied <= 0) return;
+    this.damageNumbers.show({ x: feet.x, y: 1.9, z: feet.z }, Math.round(result.applied));
+    this.hitEffects.burst({ x: feet.x, y: 1.1, z: feet.z }, 1.2, 'blood');
+    this.shake(0.28);
+    this.options.onHaptic?.('heavy');
+  }
+
+  private hasLineOfSight(
+    from: { x: number; y: number; z: number },
+    to: { x: number; z: number },
+    exclude?: Collider,
+  ): boolean {
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.001) return true;
+    const dirX = dx / distance;
+    const dirZ = dz / distance;
+    // Start outside both capsules: a ray cast from the centre of a character
+    // hits its own collider at t = 0 and would report every target as hidden.
+    const margin = 0.45;
+    const length = distance - margin - 0.3;
+    if (length <= 0) return true;
+    const hit = this.physics.raycast(
+      { x: from.x + dirX * margin, y: from.y + 1.0, z: from.z + dirZ * margin },
+      { x: dirX, y: 0, z: dirZ },
+      length,
+      exclude,
+    );
+    return hit === null;
+  }
+
+  private handlePlayerDeath(): void {
+    this.deaths += 1;
+    this.vitals.reset();
+    this.clearEnemies();
+    this.director?.reset();
+    this.player.teleport(this.dungeon.entrance);
+    this.placeHeroAtSpawn();
+    this.vitals.health.grantIFrames(2);
+    this.options.onNotify?.('Тьма забрала вас. Алтарь вернул вас к входу');
+    this.shake(0.5);
+    this.options.onHaptic?.('heavy');
+  }
+
+  private shake(strength: number): void {
+    this.shakeStrength = Math.min(1, this.shakeStrength + strength);
+  }
+
+  /**
+   * Dev/test helper: puts one skeleton in front of the player.
+   *
+   * Used by `?dummy=1` for manual combat QA and by the headless scene test, so
+   * the full attack path (stamina → arc → armour → death → XP) is exercised
+   * without waiting for the spawn director to reach a combat room.
+   */
+  debugSpawnDummy(distance = 1.6): void {
+    const definition = monsterById('skeleton');
+    if (!definition) return;
+    const facing = this.player.facing;
+    const feet = this.player.feet;
+    const enemy = new Enemy({
+      definition,
+      model: this.options.assets?.cloneCharacter(definition.model) ?? null,
+      physics: this.physics,
+      spawn: { x: feet.x - Math.sin(facing) * distance, z: feet.z - Math.cos(facing) * distance },
+      index: 10_000 + this.enemies.length,
+    });
+    this.root.add(enemy.group);
+    this.enemies.push(enemy);
+  }
+
+  /** Dev/test helper: wipes the current wave (also used by respawn). */
+  clearAllEnemiesForTest(): void {
+    this.clearEnemies();
+  }
+
+  private clearEnemies(): void {
+    for (const enemy of this.enemies) enemy.dispose();
+    this.enemies = [];
+  }
+
+  /** Current camera shake amplitude, consumed by the engine's rig. */
+  get shakeAmount(): number {
+    return this.shakeStrength;
+  }
+
+  /** Called by the engine after the shake has been consumed. */
+  consumeShake(): void {
+    this.shakeStrength = 0;
   }
 
   // ---------------------------------------------------------- diagnostics

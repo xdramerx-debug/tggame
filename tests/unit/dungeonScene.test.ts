@@ -29,6 +29,11 @@ function installCanvasStub(): () => void {
             data: new Uint8ClampedArray(width * height * 4),
           }),
           putImageData: (): void => undefined,
+          // Damage numbers paint text into their own canvas each hit.
+          clearRect: (): void => undefined,
+          fillText: (): void => undefined,
+          strokeText: (): void => undefined,
+          measureText: (): { width: number } => ({ width: 0 }),
         }),
       };
     },
@@ -149,6 +154,63 @@ describe('DungeonScene (headless)', () => {
 
     scene.triggerAction('interact');
     expect(scene.floorNumber).toBe(2);
+    scene.dispose();
+  });
+
+  it('reports combat vitals and spends stamina on attacks', () => {
+    const scene = new DungeonScene({ physics, seed: 11 });
+    const start = scene.getDebugSnapshot();
+    expect(start.hp).toBe(100);
+    expect(start.maxHp).toBe(100);
+    expect(start.stamina).toBe(100);
+    expect(start.kills).toBe(0);
+    expect(start.enemies).toBe(0);
+
+    scene.triggerAction('attack');
+    expect(scene.getDebugSnapshot().stamina).toBe(90);
+
+    // Stamina regenerates only after the lockout, through the fixed step.
+    // `physics.step` already drives the scene callback registered in the constructor.
+    for (let i = 0; i < 120; i += 1) physics.step(1 / 60);
+    expect(scene.getDebugSnapshot().stamina).toBeGreaterThan(90);
+    scene.dispose();
+  });
+
+  it('spawns enemies near the player and removes them on death', () => {
+    const scene = new DungeonScene({ physics, seed: 11 });
+    for (let i = 0; i < 90; i += 1) {
+      physics.step(1 / 60);
+      scene.update(1 / 60, i / 60);
+    }
+    expect(scene.getDebugSnapshot().enemies).toBeGreaterThan(0);
+
+    // Killing the whole wave clears them from the snapshot without leaks.
+    const collidersBefore = physics.world.colliders.len();
+    scene.clearAllEnemiesForTest();
+    expect(scene.getDebugSnapshot().enemies).toBe(0);
+    expect(physics.world.colliders.len()).toBeLessThan(collidersBefore);
+    scene.dispose();
+  });
+
+  it('kills a dummy in front of the player: arc, armour, xp and cleanup', () => {
+    const scene = new DungeonScene({ physics, seed: 2024 });
+    scene.debugSpawnDummy(1.6);
+    // Swing until the dummy dies; the 58 hp skeleton takes three clean hits.
+    let killed = false;
+    for (let swing = 0; swing < 12 && !killed; swing += 1) {
+      scene.triggerAction('attack');
+      for (let i = 0; i < 40; i += 1) {
+        physics.step(1 / 60);
+        scene.update(1 / 60, i / 60);
+      }
+      killed = (scene.getDebugSnapshot().kills ?? 0) > 0;
+      // Let stamina recover between swings, like a real fight.
+      for (let i = 0; i < 60; i += 1) physics.step(1 / 60);
+    }
+    const after = scene.getDebugSnapshot();
+    expect(after.kills).toBe(1);
+    expect(after.xp).toBeGreaterThan(0);
+    expect(after.enemies).toBe(0);
     scene.dispose();
   });
 

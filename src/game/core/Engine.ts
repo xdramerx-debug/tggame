@@ -13,6 +13,7 @@ import { PostFX } from '@/game/visual/PostFX';
 import { DungeonScene } from '@/game/scenes/DungeonScene';
 import { PhysicsWorld } from '@/game/physics';
 import { AssetLoader } from '@/game/assets/AssetLoader';
+import { hapticImpact } from '@/telegram/haptic';
 
 export interface EngineOptions {
   readonly canvas: HTMLCanvasElement;
@@ -160,7 +161,9 @@ export class Engine {
       physics: this.physicsWorld,
       seed: this.dungeonSceneSeed,
       hero,
+      assets,
       onNotify: (message) => this.options.onMessage?.(message),
+      onHaptic: (kind) => hapticImpact(kind),
     });
     this.physicsWorld.primeQueries();
     this.gameScene = scene;
@@ -263,6 +266,11 @@ export class Engine {
     return this.physicsWorld?.stepCount ?? 0;
   }
 
+  /** Dev-only: put a training skeleton in front of the player (`?dummy=1`). */
+  debugSpawnDummy(): void {
+    this.gameScene?.debugSpawnDummy?.(1.8);
+  }
+
   /** Dev-only collider wireframes. */
   setPhysicsDebug(enabled: boolean): void {
     this.gameScene?.setPhysicsDebug?.(enabled);
@@ -299,6 +307,11 @@ export class Engine {
     this.physicsWorld?.step(dt);
     scene.update(dt, elapsed);
     this.rig.setTarget(scene.followTarget);
+    const shake = scene.shakeAmount ?? 0;
+    if (shake > 0) {
+      this.rig.addShake(shake);
+      scene.consumeShake?.();
+    }
     this.rig.update(dt);
 
     this.postfx?.render(dt);

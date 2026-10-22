@@ -31,6 +31,19 @@ export interface DebugSceneSnapshot {
   readonly heroAsset?: 'gltf' | 'placeholder';
   /** Animation state of the hero (idle/walk/run/attack/dodge/hit/death). */
   readonly heroState?: string;
+  /** Player health, rounded for the HUD. */
+  readonly hp?: number;
+  readonly maxHp?: number;
+  /** Player stamina, rounded for the HUD. */
+  readonly stamina?: number;
+  /** Enemies killed this run. */
+  readonly kills?: number;
+  /** Experience earned from kills this run. */
+  readonly xp?: number;
+  /** Player deaths this run (respawns at the entrance until stage 8). */
+  readonly deaths?: number;
+  /** Living enemies currently instantiated around the player. */
+  readonly enemies?: number;
 }
 
 /** Camera-relative stick input converted into world space by the engine. */
@@ -58,6 +71,8 @@ export interface GameScene {
   fixedUpdate?(stepSeconds: number): void;
   /** Collider excluded from the camera boom raycast (the player capsule). */
   getPlayerCollider?(): Collider | null;
+  /** Dev-only: spawn a training dummy in front of the player. */
+  debugSpawnDummy?(distance?: number): void;
   /** Dev-only collider wireframes. */
   setPhysicsDebug?(enabled: boolean): void;
   /** Locomotion command, already resolved to world space by the engine. */
@@ -66,6 +81,10 @@ export interface GameScene {
   triggerAction(action: InputAction): void;
   /** What the interact button should offer right now, or null when nothing is near. */
   getInteractionHint(): InteractionHint | null;
+  /** Camera shake requested by combat this frame (0…1), consumed by the rig. */
+  readonly shakeAmount?: number;
+  /** Clears the accumulated shake once the camera rig has applied it. */
+  consumeShake?(): void;
   /** Read-only diagnostics for the dev bridge. */
   getDebugSnapshot(): DebugSceneSnapshot;
   /** Re-apply tier-dependent knobs (shadow size, light count, particle budget). */

@@ -1,0 +1,49 @@
+{
+  "monsters": [
+    {
+      "id": "skeleton",
+      "label": "Костяной страж",
+      "model": "monsterSkeleton",
+      "maxHp": 58,
+      "armor": 4,
+      "damage": 9,
+      "speed": 1.85,
+      "aggroRange": 11,
+      "leashRange": 18,
+      "attackRange": 1.95,
+      "windup": 0.45,
+      "recover": 0.85,
+      "attackCooldown": 0.7,
+      "staggerTime": 0.3,
+      "knockback": 1.4,
+      "xp": 12,
+      "rooms": ["combat", "entrance", "boss"]
+    },
+    {
+      "id": "revenant",
+      "label": "Ревенант",
+      "model": "monsterSkeleton",
+      "maxHp": 92,
+      "armor": 9,
+      "damage": 14,
+      "speed": 2.1,
+      "aggroRange": 13,
+      "leashRange": 20,
+      "attackRange": 2.1,
+      "windup": 0.55,
+      "recover": 1,
+      "attackCooldown": 0.9,
+      "staggerTime": 0.22,
+      "knockback": 1.1,
+      "xp": 22,
+      "rooms": ["combat"]
+    }
+  ],
+  "spawn": {
+    "perRoom": 2,
+    "maxActive": 6,
+    "activateRange": 13,
+    "deactivateRange": 26,
+    "minFloorForRevenant": 2
+  }
+}

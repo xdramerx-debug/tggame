@@ -8,6 +8,7 @@ import { InputLayer } from '@/input';
 import type { InteractionHint } from '@/input/types';
 import { hapticImpact } from '@/telegram/haptic';
 import { setCloseConfirmation } from '@/telegram/viewport';
+import { DangerVignette, HealthBar, useVitals } from './components/VitalsHud';
 
 /** Polls the scene for an interaction offer; cheap and only while in a run. */
 function useInteractionHint(): InteractionHint | null {
@@ -32,13 +33,21 @@ function useInteractionHint(): InteractionHint | null {
   return hint;
 }
 
-function Bar({ label, value, color }: { readonly label: string; readonly value: number; readonly color: string }): ReactElement {
+function Bar({
+  label,
+  value,
+  max = 100,
+  color,
+}: {
+  readonly label: string;
+  readonly value: number;
+  readonly max?: number;
+  readonly color: string;
+}): ReactElement {
   return (
     <div className="flex items-center gap-1.5" aria-label={label}>
       <span className="w-4 text-[10px] font-bold uppercase tracking-wider text-[#9aa3ae]">{label}</span>
-      <div className="h-2.5 w-[15vw] max-w-[130px] overflow-hidden rounded-sm border border-black/80 bg-black/70">
-        <div className="h-full transition-[width] duration-200" style={{ width: `${value}%`, background: color }} />
-      </div>
+      <HealthBar value={value} max={max} color={color} />
     </div>
   );
 }
@@ -73,6 +82,7 @@ function HudToast(): ReactElement | null {
 export function GameScreen(): ReactElement {
   const setScreen = useGameStore((state) => state.setScreen);
   const interactionHint = useInteractionHint();
+  const vitals = useVitals();
 
   useEffect(() => {
     setCloseConfirmation(true);
@@ -81,11 +91,12 @@ export function GameScreen(): ReactElement {
 
   useEffect(() => installDebugBridge(() => gameHost.getDebugSnapshot()), []);
 
-  // Dev-only collider wireframes: `?physics=1`.
+  // Dev-only collider wireframes (`?physics=1`) and a training dummy (`?dummy=1`).
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    const enabled = new URLSearchParams(window.location.search).get('physics') === '1';
-    gameHost.setPhysicsDebug(enabled);
+    const params = new URLSearchParams(window.location.search);
+    gameHost.setPhysicsDebug(params.get('physics') === '1');
+    if (params.get('dummy') === '1') gameHost.spawnDummy();
   }, []);
 
   const pauseToMenu = (): void => {
@@ -102,12 +113,17 @@ export function GameScreen(): ReactElement {
 
       <div className="pointer-events-none relative z-30 flex items-start justify-between p-3">
         <div className="hud-panel flex flex-col gap-1.5 px-2.5 py-2" style={{ opacity: 'var(--hud-opacity)' }}>
-          <Bar label="HP" value={100} color="linear-gradient(90deg,#7d1f1f,#b33a3a)" />
-          <Bar label="ST" value={82} color="linear-gradient(90deg,#2f5c52,#4a7c8c)" />
+          <Bar label="HP" value={vitals.hp} max={vitals.maxHp} color="linear-gradient(90deg,#7d1f1f,#b33a3a)" />
+          <Bar label="ST" value={vitals.stamina} color="linear-gradient(90deg,#2f5c52,#4a7c8c)" />
           <Bar label="HG" value={64} color="linear-gradient(90deg,#6b4e2e,#c9a227)" />
           <div className="mt-0.5 flex items-center gap-2">
             <span className="text-[11px] font-semibold text-gold">Lv.1</span>
-            <span className="text-[10px] uppercase tracking-widest text-[#5a6470]">Этаж 1</span>
+            <span className="text-[10px] uppercase tracking-widest text-[#5a6470]" data-testid="floor-label">
+              Этаж {vitals.floor}
+            </span>
+            <span className="text-[10px] uppercase tracking-widest text-[#5a6470]" data-testid="kill-label">
+              ☠ {vitals.kills}
+            </span>
           </div>
         </div>
 
@@ -134,12 +150,13 @@ export function GameScreen(): ReactElement {
         </div>
       </div>
 
+      <DangerVignette hp={vitals.hp} maxHp={vitals.maxHp} />
       <HudToast />
       <PerfOverlay />
 
       <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+6px)] z-0 flex justify-center">
         <p className="hud-panel hud-outline px-3 py-1 text-center text-[11px] leading-snug text-[#9aa3ae]">
-          Этап 5 · GLB-герой со скелетной анимацией · ?seed=42 · ?quality=low
+          Этап 6 · бой в реальном времени · ?seed=42 · ?quality=low
         </p>
       </div>
     </div>

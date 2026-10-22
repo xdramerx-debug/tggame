@@ -113,6 +113,11 @@ class GameHost {
     return this.engine?.getInteractionHint() ?? null;
   }
 
+  /** Dev-only: spawn one training skeleton in front of the player. */
+  spawnDummy(): void {
+    this.engine?.debugSpawnDummy();
+  }
+
   /** Dev-only: toggle Rapier collider wireframes. */
   setPhysicsDebug(enabled: boolean): void {
     this.engine?.setPhysicsDebug(enabled);

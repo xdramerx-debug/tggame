@@ -85,6 +85,8 @@ export class CameraRig {
   degreesPerPx: number;
   invertY: boolean;
   private currentDistance = 5;
+  private shakeStrength = 0;
+  private shakePhase = 0;
   private initialized = false;
 
   constructor(options: CameraRigOptions) {
@@ -136,6 +138,14 @@ export class CameraRig {
     return out.copy(this.smoothTarget).sub(this.camera.position).normalize();
   }
 
+  /**
+   * Adds camera shake (0…1). Damage feedback only: the offset decays in ~0.25 s
+   * so it never fights the player's own camera control.
+   */
+  addShake(strength: number): void {
+    this.shakeStrength = Math.min(1, this.shakeStrength + Math.max(0, strength));
+  }
+
   update(dt: number): void {
     if (!this.initialized) return;
     const k = damp(CAMERA_LIMITS.followLagSec, dt);
@@ -166,6 +176,17 @@ export class CameraRig {
 
     this.tmp.copy(this.smoothTarget).addScaledVector(this.boomDir, this.currentDistance);
     this.camera.position.copy(this.tmp);
+    if (this.shakeStrength > 0.001) {
+      // Deterministic-ish jitter from a fast sine sweep: no RNG allocation, and
+      // it reads as impact rather than as camera instability.
+      const t = this.shakePhase;
+      const amplitude = this.shakeStrength * 0.16;
+      this.camera.position.x += Math.sin(t * 91.7) * amplitude;
+      this.camera.position.y += Math.sin(t * 137.3 + 1.7) * amplitude;
+      this.camera.position.z += Math.cos(t * 113.1) * amplitude;
+      this.shakePhase += dt;
+      this.shakeStrength = Math.max(0, this.shakeStrength - dt * 4);
+    }
     this.camera.lookAt(this.smoothTarget);
   }
 
