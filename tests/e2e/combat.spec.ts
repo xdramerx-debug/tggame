@@ -34,9 +34,11 @@ test.describe('combat', () => {
     expect(spent.scene.attacks).toBeGreaterThan(0);
     expect(spent.scene.stamina).toBeLessThan(100);
 
-    await waitForPhysicsSteps(page, 120);
-    const regenerated = await readState(page);
-    expect(regenerated.scene.stamina).toBeGreaterThan(spent.scene.stamina ?? 0);
+    // Stamina must climb back: poll the simulation instead of assuming a
+    // fixed number of steps fits in the CI frame budget (SwiftShader is slow).
+    await expect
+      .poll(async () => (await readState(page)).scene.stamina ?? 0, { timeout: 45_000, intervals: [250, 500, 1000] })
+      .toBeGreaterThan(spent.scene.stamina ?? 0);
   });
 
   test('walking towards the next room brings enemies into the world', async ({ page }) => {

@@ -41,6 +41,7 @@ test.describe('boss and meta progression', () => {
 
     await pressTestId(page, 'death-altar');
     await expect(page.getByTestId('meta-screen')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('meta-hint')).toBeAttached();
     // The payout is already credited: the altar must show at least what was won.
     const embers = Number(await page.getByTestId('meta-embers').innerText().then((text) => text.replace(/\D/g, '')));
     expect(embers).toBeGreaterThanOrEqual(paid);
@@ -54,13 +55,21 @@ test.describe('boss and meta progression', () => {
     await expect(page.getByTestId('meta-screen')).toBeVisible();
 
     // `?embers=60` is the dev pay-out hook: the first vitality level costs 12.
-    await expect(page.getByTestId('upgrade-buy-vitality')).toBeEnabled();
+    const buy = page.getByTestId('upgrade-buy-vitality');
+    await expect(buy).toHaveAttribute('data-affordable', 'true');
+    const before = await page.getByTestId('meta-embers').innerText();
+
     await pressTestId(page, 'upgrade-buy-vitality');
     await expect(page.getByTestId('upgrade-level-vitality')).toHaveText('1/5');
+    // The price is actually deducted, not just the level bumped.
+    expect(Number((await page.getByTestId('meta-embers').innerText()).replace(/\D/g, ''))).toBeLessThan(
+      Number(before.replace(/\D/g, '')),
+    );
 
     await page.reload();
     await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 20_000 });
     await page.getByTestId('menu-Алтарь').click();
+    // Persisted by the debounced write (250 ms) that ran before the reload.
     await expect(page.getByTestId('upgrade-level-vitality')).toHaveText('1/5');
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import { motion } from 'framer-motion';
 import { useMetaStore } from '@/store/useMetaStore';
@@ -32,7 +32,9 @@ function UpgradeRow({
   affordable,
   onBuy,
 }: UpgradeRowProps): ReactElement {
-  const disabled = maxed || !affordable;
+  // The row is never `disabled`: a dead button on a touch screen explains
+  // nothing. A tap on an unaffordable row shows a hint instead (see `onBuy`).
+  const dimmed = maxed || !affordable;
   return (
     <div className="hud-panel flex items-center gap-3 px-3 py-2" data-testid={`upgrade-${id}`}>
       <span className="text-xl" aria-hidden="true">
@@ -58,12 +60,14 @@ function UpgradeRow({
       <button
         type="button"
         className={`hud-panel flex min-h-[56px] w-20 shrink-0 flex-col items-center justify-center text-sm font-semibold transition-transform duration-100 active:scale-[0.97] ${
-          disabled ? 'border-white/10 text-[#5a6470]' : 'border-gold/80 text-gold'
+          dimmed ? 'border-white/10 text-[#5a6470]' : 'border-gold/80 text-gold'
         }`}
-        disabled={disabled}
+        aria-disabled={dimmed}
+        aria-label={`Купить ${label}`}
         onPointerDown={() => hapticImpact(affordable ? 'medium' : 'light')}
         onClick={() => onBuy(id)}
         data-testid={`upgrade-buy-${id}`}
+        data-affordable={affordable ? 'true' : 'false'}
       >
         <span>{maxed ? 'МАКС' : (cost ?? '—')}</span>
         {maxed ? null : <span className="text-[10px] font-normal text-[#9aa3ae]">🔥</span>}
@@ -85,11 +89,38 @@ export function MetaScreen({ onBack }: { readonly onBack: () => void }): ReactEl
   const loaded = useMetaStore((state) => state.loaded);
   const hydrate = useMetaStore((state) => state.hydrate);
   const purchase = useMetaStore((state) => state.purchase);
+  const [hint, setHint] = useState<string | null>(null);
 
   useEffect(() => {
     hideBackButton();
     if (!loaded) void hydrate();
   }, [loaded, hydrate]);
+
+  // Feedback lives next to the list so it is visible on a landscape phone
+  // without covering the rows the player is deciding between.
+  useEffect(() => {
+    if (!hint) return;
+    const timer = window.setTimeout(() => setHint(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [hint]);
+
+  const buy = useCallback(
+    (id: string): void => {
+      const row = useMetaStore.getState().upgrades.find((upgrade) => upgrade.id === id);
+      if (!row) return;
+      if (row.maxed) {
+        setHint(`${row.label}: уже максимум`);
+        return;
+      }
+      if (!purchase(id)) {
+        setHint(`Не хватает углей: нужно ${row.cost ?? 0}`);
+        return;
+      }
+      hapticImpact('medium');
+      setHint(`${row.label} → ур. ${row.level + 1}`);
+    },
+    [purchase],
+  );
 
   return (
     <motion.div
@@ -117,11 +148,19 @@ export function MetaScreen({ onBack }: { readonly onBack: () => void }): ReactEl
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         <div className="flex flex-col gap-2 pb-2">
           {upgrades.map((upgrade) => (
-            <UpgradeRow key={upgrade.id} {...upgrade} onBuy={purchase} />
+            <UpgradeRow key={upgrade.id} {...upgrade} onBuy={buy} />
           ))}
           {!loaded ? <p className="px-1 text-sm text-[#7c8794]">Загрузка…</p> : null}
         </div>
       </div>
+
+      <p
+        className={`h-6 text-center text-[12px] ${hint ? 'text-gold' : 'text-transparent'}`}
+        data-testid="meta-hint"
+        aria-live="polite"
+      >
+        {hint ?? '—'}
+      </p>
 
       <button
         type="button"

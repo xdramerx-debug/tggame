@@ -38,7 +38,7 @@ export const useMetaStore = create<MetaStoreState>()((set, get) => ({
     const state = await metaStorage.load();
     // QA hook (`?embers=100`): a full altar must be reachable in E2E without
     // farming ten runs. Dev builds only — production never reads this param.
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV && typeof window !== 'undefined') {
       const requested = Number.parseInt(
         new URLSearchParams(window.location.search).get('embers') ?? '',
         10,

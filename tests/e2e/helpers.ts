@@ -54,7 +54,7 @@ export async function readState(page: Page): Promise<DebugState> {
 }
 
 /** Resolves after the simulation advanced by `steps` fixed steps. */
-export async function waitForPhysicsSteps(page: Page, steps: number, timeout = 30_000): Promise<void> {
+export async function waitForPhysicsSteps(page: Page, steps: number, timeout = 60_000): Promise<void> {
   const start = await page.evaluate(() => window.__TENEBRIS__?.getState()?.physicsSteps ?? 0);
   await expect
     .poll(async () => page.evaluate(() => window.__TENEBRIS__?.getState()?.physicsSteps ?? 0), {

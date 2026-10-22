@@ -15,6 +15,7 @@ export class MetaStorage {
   private readonly repository = new MetaRepository();
   private state = new MetaState();
   private loaded = false;
+  private dirty = false;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   get value(): MetaState {
@@ -25,7 +26,9 @@ export class MetaStorage {
   async load(): Promise<MetaState> {
     if (this.loaded) return this.state;
     const stored = await this.repository.get<MetaSnapshot | null>(STORAGE_KEY, null);
-    this.state.restore(stored);
+    // A purchase made while the read was in flight must not be rolled back by
+    // the (older) stored snapshot.
+    if (!this.dirty) this.state.restore(stored);
     this.loaded = true;
     return this.state;
   }
@@ -33,6 +36,7 @@ export class MetaStorage {
   /** Applies a mutation and schedules a debounced write (runs end on taps). */
   update(mutator: (state: MetaState) => void): MetaState {
     mutator(this.state);
+    this.dirty = true;
     this.scheduleSave();
     return this.state;
   }
