@@ -53,6 +53,8 @@ import type { ItemSlotId } from '@/game/loot/itemTable';
 import type { StatBonuses } from '@/game/player/PlayerStats';
 import { addBonuses } from '@/game/meta/MetaState';
 import { NO_BONUSES } from '@/game/player/PlayerStats';
+import type { SoundId } from '@/game/audio/soundSet';
+import { STEP_DISTANCE } from '@/game/audio/soundSet';
 import { HitEffects } from '@/game/visual/HitEffects';
 import { DamageNumbers } from '@/game/visual/DamageNumbers';
 import { PlayerStats, PLAYER_BASE } from '@/game/player/PlayerStats';
@@ -73,6 +75,8 @@ export interface DungeonSceneOptions {
   readonly assets?: AssetLoader | null;
   /** Haptics hook; the engine maps it to Telegram HapticFeedback. */
   readonly onHaptic?: (kind: 'light' | 'medium' | 'heavy') => void;
+  /** Sound cue; the engine maps it to the audio manager (scene stays silent). */
+  readonly onSound?: (id: SoundId) => void;
   /** Called once when the run ends (the HUD replaces the game with a summary). */
   readonly onDeath?: (summary: RunSummary) => void;
   /** Permanent meta-progression bonuses, applied on top of equipment. */
@@ -172,6 +176,9 @@ export class DungeonScene implements GameScene {
   private boss: Enemy | null = null;
   private bossPhase = 0;
   private bossKilled = false;
+  /** Metres walked since the last footstep cue. */
+  private stepDistance = 0;
+  private readonly doorOpenState = new WeakMap<object, boolean>();
   private chests: Chest[] = [];
   private chestsOpened = 0;
 
@@ -272,6 +279,7 @@ export class DungeonScene implements GameScene {
         // Stamina gates the swing; an exhausted player still sees the animation
         // but deals no damage, which reads better than a silently dead button.
         this.player.startAttack();
+        this.sound('swing');
         if (this.vitals.spendStamina(PLAYER_BASE.attackStamina)) {
           this.pendingStrike = PLAYER_TUNING.attackDuration * STRIKE_FRACTION;
         }
@@ -437,7 +445,7 @@ export class DungeonScene implements GameScene {
 
     this.hero.update(dt, elapsed, this.player.speed, this.player.isDodging || this.player.isAttacking);
 
-    for (const door of this.doors) door.update(dt, feet);
+    this.updateDoorsAndSteps(dt, feet);
     for (const enemy of this.enemies) {
       const speed = enemy.brain.state === 'chase' ? enemy.definition.speed : 0;
       enemy.update(dt, elapsed, speed);
@@ -457,6 +465,34 @@ export class DungeonScene implements GameScene {
     this.keyLight.position.set(feet.x + 6, 14, feet.z + 4);
   }
 
+  /**
+   * Ambient feedback that is not an event: footstep cadence and door creaks.
+   *
+   * Steps are written as a distance accumulator rather than a timer so the sound
+   * follows the animation at any frame rate (and stops when the player stops).
+   */
+  private updateDoorsAndSteps(dt: number, feet: { x: number; z: number }): void {
+    for (const door of this.doors) {
+      door.update(dt, feet);
+      const wasOpen = this.doorOpenState.get(door) ?? false;
+      const isOpen = door.isOpen;
+      if (isOpen && !wasOpen) this.sound('door');
+      this.doorOpenState.set(door, isOpen);
+    }
+
+    const speed = this.dead ? 0 : this.player.speed;
+    if (speed > 0.5) {
+      this.stepDistance += speed * dt;
+      if (this.stepDistance >= STEP_DISTANCE) {
+        this.stepDistance = 0;
+        this.sound('step');
+      }
+    } else {
+      // Do not carry a half-step into the next movement burst.
+      this.stepDistance = Math.min(this.stepDistance, STEP_DISTANCE * 0.5);
+    }
+  }
+
   dispose(): void {
     this.physics.onFixedStep(null);
     this.physicsDebug.dispose();
@@ -472,6 +508,11 @@ export class DungeonScene implements GameScene {
     }
     this.textures.dispose();
     this.root.clear();
+  }
+
+  /** One-line funnel so a missing audio layer can never throw mid-frame. */
+  private sound(id: SoundId): void {
+    this.options.onSound?.(id);
   }
 
   // -------------------------------------------------------------- floors
@@ -490,6 +531,7 @@ export class DungeonScene implements GameScene {
     this.placeHeroAtSpawn();
     // New static colliders are invisible to queries until the world steps.
     this.physics.primeQueries();
+    this.sound('descend');
     this.options.onFloorChange?.(nextFloor);
     this.options.onNotify?.(`Этаж ${nextFloor}`);
   }
@@ -545,6 +587,7 @@ export class DungeonScene implements GameScene {
     this.hitEffects.burst(position, 1.8, 'spark');
     this.damageNumbers.show({ x: position.x, y: 1.3, z: position.z }, gain.gold);
     this.options.onHaptic?.('medium');
+    this.sound('chest');
     this.options.onNotify?.(describeLoot('Сундук', gain));
   }
 
@@ -787,8 +830,10 @@ export class DungeonScene implements GameScene {
         result.killed ? 'blood' : 'spark',
       );
       this.options.onHaptic?.(roll.critical ? 'medium' : 'light');
+      this.sound(roll.critical ? 'crit' : 'hit');
 
       if (result.killed) {
+        this.sound('enemy-death');
         this.kills += 1;
         this.run.addXp(enemy.definition.xp);
         this.director?.markKilled(enemy.id);
@@ -869,6 +914,7 @@ export class DungeonScene implements GameScene {
     if (enemy.isBoss) {
       this.boss = enemy;
       enemy.onPhaseChange = ({ index, taunt }) => {
+        this.sound('boss-phase');
         this.options.onNotify?.(taunt);
         this.options.onHaptic?.('heavy');
         this.shake(0.35);
@@ -890,6 +936,7 @@ export class DungeonScene implements GameScene {
     this.hitEffects.burst({ x: feet.x, y: 1.1, z: feet.z }, 1.2, 'blood');
     this.shake(0.28);
     this.options.onHaptic?.('heavy');
+    this.sound('hurt');
   }
 
   private hasLineOfSight(
@@ -944,6 +991,7 @@ export class DungeonScene implements GameScene {
       chestsOpened: this.chestsOpened,
     };
     this.shake(cause === 'victory' ? 0.2 : 0.5);
+    this.sound(cause === 'victory' ? 'victory' : 'death');
     this.options.onHaptic?.(cause === 'victory' ? 'medium' : 'heavy');
     this.options.onNotify?.(
       cause === 'victory' ? 'Смотритель повержен' : cause === 'starvation' ? 'Голод взял своё' : 'Тьма забрала вас',
@@ -1019,6 +1067,7 @@ export class DungeonScene implements GameScene {
     this.vitals.heal(6);
     this.damageNumbers.show({ x: this.player.feet.x, y: 1.9, z: this.player.feet.z }, Math.round(taste));
     this.options.onHaptic?.('light');
+    this.sound('ration');
     return true;
   }
 
@@ -1027,6 +1076,7 @@ export class DungeonScene implements GameScene {
     const tier = this.survival.tier;
     if (tier === this.lastHungerTier) return;
     this.lastHungerTier = tier;
+    this.sound('hunger');
     if (tier === 'hungry') this.options.onNotify?.('Голод: стамина восстанавливается медленнее');
     if (tier === 'starving') this.options.onNotify?.('Истощение: здоровье убывает, съешьте паёк');
   }
@@ -1059,6 +1109,7 @@ export class DungeonScene implements GameScene {
     this.hitEffects.burst({ x: fire.x, y: 1.0, z: fire.z }, 1.4, 'spark');
     if (healed > 0) this.damageNumbers.show({ x: fire.x, y: 1.3, z: fire.z }, healed);
     this.announceHunger();
+    this.sound('campfire');
     this.options.onHaptic?.('medium');
     this.options.onNotify?.(
       healed > 0 ? `Отдых: +${healed} HP, +${Math.round(fed)} сытости` : `Отдых: +${Math.round(fed)} сытости`,
@@ -1124,15 +1175,22 @@ export class DungeonScene implements GameScene {
     });
     this.root.add(enemy.group);
     this.enemies.push(enemy);
-    if (enemy.isBoss) {
-      this.boss = enemy;
-      enemy.onPhaseChange = ({ index, taunt }) => {
-        this.options.onNotify?.(taunt);
-        this.options.onHaptic?.('heavy');
-        this.shake(0.35);
-        this.bossPhase = index + 1;
-      };
-    }
+    this.registerEnemy(enemy);
+  }
+
+  /** Single place where a spawned body gets its boss wiring (phase callbacks). */
+  private registerEnemy(enemy: Enemy): void {
+    if (!enemy.isBoss) return;
+    this.boss = enemy;
+    this.sound('boss-roar');
+    this.options.onNotify?.(`${enemy.name} пробудился`);
+    enemy.onPhaseChange = ({ index, taunt }) => {
+      this.sound('boss-phase');
+      this.options.onNotify?.(taunt);
+      this.options.onHaptic?.('heavy');
+      this.shake(0.35);
+      this.bossPhase = index + 1;
+    };
   }
 
   /** Dev/test helper: wipes the current wave (also used by respawn). */

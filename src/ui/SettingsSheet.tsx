@@ -6,6 +6,7 @@ import { hapticSelection } from '@/telegram/haptic';
 import { gameHost } from '@/game/GameHost';
 import { useGameStore } from '@/store/useGameStore';
 import { QUALITY_PRESETS } from '@/game/core/Quality';
+import { audio } from '@/game/audio';
 
 interface Option<T extends string> {
   readonly value: T;
@@ -146,6 +147,52 @@ export function SettingsSheet({ open, onClose }: { readonly open: boolean; reado
           >
             {settings.autoAttack ? 'Включено' : 'Выключено'}
           </button>
+        </Row>
+
+        <Row title="Звук" hint={settings.soundEnabled ? 'вкл' : 'выкл'}>
+          <div className="flex flex-col gap-3">
+            <button
+              type="button"
+              aria-pressed={settings.soundEnabled}
+              className={`hud-panel min-h-[48px] px-4 text-sm ${
+                settings.soundEnabled ? 'border-gold text-gold' : 'border-white/10 text-[#9aa3ae]'
+              }`}
+              onPointerDown={() => hapticSelection()}
+              onClick={() => {
+                settings.setSoundEnabled(!settings.soundEnabled);
+                // A confirmation blip after enabling proves the mixer is alive.
+                if (!settings.soundEnabled) audio.playSound('ui', { force: true });
+                hapticSelection();
+              }}
+            >
+              {settings.soundEnabled ? 'Включён' : 'Выключен'}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={settings.sfxVolume}
+              disabled={!settings.soundEnabled}
+              onPointerUp={() => audio.playSound('hit', { force: true })}
+              onChange={(event) => settings.setSfxVolume(Number(event.target.value))}
+              className="h-12 w-full accent-[#c9a227] disabled:opacity-40"
+              aria-label="Громкость эффектов"
+            />
+            <span className="text-xs text-[#9aa3ae]">Эффекты: {Math.round(settings.sfxVolume * 100)}%</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={settings.musicVolume}
+              disabled={!settings.soundEnabled}
+              onChange={(event) => settings.setMusicVolume(Number(event.target.value))}
+              className="h-12 w-full accent-[#c9a227] disabled:opacity-40"
+              aria-label="Громкость атмосферы"
+            />
+            <span className="text-xs text-[#9aa3ae]">Атмосфера: {Math.round(settings.musicVolume * 100)}%</span>
+          </div>
         </Row>
 
         <Row title="Прозрачность HUD" hint={`${Math.round(settings.hudOpacity * 100)}%`}>

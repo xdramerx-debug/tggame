@@ -17,6 +17,7 @@ import type { InventorySnapshot } from '@/game/loot/RunState';
 import type { RunSummary } from '@/game/scenes/DungeonScene';
 import type { ItemSlotId } from '@/game/loot/itemTable';
 import { hapticImpact } from '@/telegram/haptic';
+import { audio, loadAudio } from '@/game/audio';
 import type { StatBonuses } from '@/game/player/PlayerStats';
 
 export interface EngineOptions {
@@ -186,6 +187,7 @@ export class Engine {
       assets,
       onNotify: (message) => this.options.onMessage?.(message),
       onHaptic: (kind) => hapticImpact(kind),
+      onSound: (id) => audio.playSound(id),
       onDeath: (summary) => this.options.onDeath?.(summary),
       floor: resolveStartFloor(),
       metaBonuses: this.options.metaBonuses,
@@ -215,8 +217,12 @@ export class Engine {
     this.rig.snap();
     await yieldToBrowser();
 
-    progress('audio', 0.78);
-    // TODO(stage-10): preload the procedural audio manifest before enabling the HUD.
+    // Procedural audio: the backend loads lazily, so this starts the 18 decoded
+    // buffers in the background while the HUD fades in. A failure is silent by
+    // design — `loadAudio` never rejects.
+    progress('audio', 0.78, 'Звук');
+    await loadAudio();
+    audio.startAmbience();
     await yieldToBrowser();
 
     this.initialized = true;

@@ -25,6 +25,8 @@ import { buildMonster, MONSTER_CLIPS } from './models/monster';
 import { PROP_MODELS } from './models/props';
 import { exportGlb, inspectGlb } from './models/glb';
 import type { CharacterAsset, PropAsset } from './models/types';
+import { SOUNDS, renderSound } from './audio/sfx';
+import { SAMPLE_RATE, decodeWav, encodeWav } from './audio/wav';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -49,6 +51,15 @@ export interface AssetReport {
   readonly bytes: number;
   readonly triangles: number;
   readonly clips: readonly string[];
+}
+
+export interface AudioReport {
+  readonly id: string;
+  readonly file: string;
+  readonly bytes: number;
+  readonly durationSec: number;
+  readonly category: string;
+  readonly peak: number;
 }
 
 interface Options {
@@ -97,13 +108,51 @@ async function buildModel(entry: ModelEntry, outDir: string): Promise<AssetRepor
   };
 }
 
+/**
+ * Renders every sound and writes it next to the models.
+ *
+ * The generated WAV is decoded back before it is written: a click, a clipped
+ * sample or a stray DC offset would ship silently otherwise.
+ */
+async function buildAudio(only: readonly string[], outDir: string): Promise<AudioReport[]> {
+  const selected = only.length > 0 ? SOUNDS.filter((sound) => only.includes(sound.id)) : SOUNDS;
+  const reports: AudioReport[] = [];
+  for (const sound of selected) {
+    const samples = renderSound(sound, SAMPLE_RATE);
+    const bytes = encodeWav(samples, SAMPLE_RATE);
+    const { info } = decodeWav(bytes);
+    if (info.channels !== 1) throw new Error(`${sound.id}: expected mono, got ${info.channels} channels`);
+    if (info.sampleRate !== SAMPLE_RATE) throw new Error(`${sound.id}: wrong sample rate ${info.sampleRate}`);
+    if (info.peak > 0.999) throw new Error(`${sound.id}: clips at ${info.peak.toFixed(3)}`);
+    if (info.peak < 0.2) throw new Error(`${sound.id}: too quiet (${info.peak.toFixed(3)})`);
+    const file = join(outDir, sound.file);
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, bytes);
+    reports.push({
+      id: sound.id,
+      file: sound.file,
+      bytes: bytes.byteLength,
+      durationSec: Number(info.durationSec.toFixed(3)),
+      category: sound.category,
+      peak: Number(info.peak.toFixed(3)),
+    });
+    console.log(
+      `  ${sound.file.padEnd(30)} ${(bytes.byteLength / 1024).toFixed(1).padStart(6)} kB  ` +
+        `${info.durationSec.toFixed(2).padStart(5)} s  ${sound.category}`,
+    );
+  }
+  return reports;
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  const wantsAudio = options.only.length === 0 || options.only.includes('audio');
+  const onlyModels = options.only.filter((item) => item !== 'audio');
   const selected =
-    options.only.length > 0
-      ? MODELS.filter((model) => options.only.includes(model.id) || options.only.includes(model.name))
-      : MODELS;
-  if (selected.length === 0) throw new Error(`no models matched --only=${options.only.join(',')}`);
+    options.only.length === 0
+      ? MODELS
+      : MODELS.filter((model) => onlyModels.includes(model.id) || onlyModels.includes(model.name));
+  if (selected.length === 0 && !wantsAudio) throw new Error(`no assets matched --only=${options.only.join(',')}`);
 
   const startedAt = Date.now();
   const reports: AssetReport[] = [];
@@ -116,9 +165,12 @@ async function main(): Promise<void> {
     );
   }
 
+  const audio = wantsAudio ? await buildAudio(options.only, options.outDir) : [];
+
   const manifest = {
     generator: 'scripts/build-assets.ts',
-    version: 1,
+    version: 2,
+    sampleRate: SAMPLE_RATE,
     models: reports.map((report, index) => ({
       id: selected[index]?.id ?? report.file,
       name: report.file.replace('models/', '').replace('.glb', ''),
@@ -126,13 +178,19 @@ async function main(): Promise<void> {
       bytes: report.bytes,
       clips: report.clips,
     })),
+    audio,
   };
   await mkdir(options.outDir, { recursive: true });
   await writeFile(join(options.outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
-  const totalBytes = reports.reduce((sum, report) => sum + report.bytes, 0);
+  const modelBytes = reports.reduce((sum, report) => sum + report.bytes, 0);
+  const audioBytes = audio.reduce((sum, report) => sum + report.bytes, 0);
+  if (audioBytes > 600 * 1024) {
+    throw new Error(`audio budget exceeded: ${(audioBytes / 1024).toFixed(1)} kB > 600 kB`);
+  }
   console.log(
-    `\n${reports.length} model(s), ${(totalBytes / 1024).toFixed(1)} kB total, ` +
+    `\n${reports.length} model(s) ${(modelBytes / 1024).toFixed(1)} kB + ` +
+      `${audio.length} sound(s) ${(audioBytes / 1024).toFixed(1)} kB, ` +
       `${Date.now() - startedAt} ms → ${options.outDir}`,
   );
 }

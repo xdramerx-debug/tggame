@@ -7,6 +7,7 @@ import type { ItemSlotId } from '@/game/loot/itemTable';
 import type { StatBonuses } from '@/game/player/PlayerStats';
 import { Engine } from './core/Engine';
 import { hapticSelection } from '@/telegram/haptic';
+import { audio } from '@/game/audio';
 
 export interface GameHostCallbacks {
   readonly onProgress?: (progress: InitProgress) => void;
@@ -218,6 +219,7 @@ class GameHost {
       quality: engine.qualityLevel,
       fps: stats?.fps ?? 0,
       physicsSteps: engine.getPhysicsStepCount(),
+      audio: audio.snapshot(),
     };
   }
 

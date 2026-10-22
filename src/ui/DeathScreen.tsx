@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { motion } from 'framer-motion';
 import type { RunSummary } from '@/game/scenes/DungeonScene';
 import { hapticImpact } from '@/telegram/haptic';
+import { audio } from '@/game/audio';
 
 interface DeathScreenProps {
   readonly summary: RunSummary;
@@ -86,7 +87,10 @@ export function DeathScreen({ summary, reward, onRestart, onAltar, onMenu }: Dea
           className="hud-panel flex min-h-[56px] flex-1 items-center justify-center border-gold/80 text-base font-semibold text-gold active:scale-[0.97]"
           style={{ background: 'linear-gradient(180deg, rgba(201,162,39,0.22), rgba(0,0,0,0.65))' }}
           onPointerDown={() => hapticImpact('medium')}
-          onClick={onRestart}
+          onClick={() => {
+            audio.playSound('ui');
+            onRestart();
+          }}
           data-testid="death-restart"
         >
           Новый забег
@@ -95,7 +99,10 @@ export function DeathScreen({ summary, reward, onRestart, onAltar, onMenu }: Dea
           type="button"
           className="hud-panel flex min-h-[56px] flex-1 items-center justify-center text-base text-[#e8e3d6] active:scale-[0.97]"
           onPointerDown={() => hapticImpact('light')}
-          onClick={onAltar}
+          onClick={() => {
+            audio.playSound('ui');
+            onAltar();
+          }}
           data-testid="death-altar"
         >
           Алтарь
@@ -104,7 +111,10 @@ export function DeathScreen({ summary, reward, onRestart, onAltar, onMenu }: Dea
           type="button"
           className="hud-panel flex min-h-[56px] flex-1 items-center justify-center text-base text-[#e8e3d6] active:scale-[0.97]"
           onPointerDown={() => hapticImpact('light')}
-          onClick={onMenu}
+          onClick={() => {
+            audio.playSound('ui');
+            onMenu();
+          }}
           data-testid="death-menu"
         >
           В меню

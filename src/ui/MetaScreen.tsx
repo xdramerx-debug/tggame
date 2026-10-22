@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { META_STORE_ID, useMetaStore } from '@/store/useMetaStore';
 import { META_CURRENCY } from '@/game/meta/MetaState';
 import { hapticImpact } from '@/telegram/haptic';
+import { audio } from '@/game/audio';
 import { hideBackButton } from '@/telegram/buttons';
 
 interface UpgradeRowProps {
@@ -116,6 +117,7 @@ export function MetaScreen({ onBack }: { readonly onBack: () => void }): ReactEl
     (id: string): void => {
       const row = useMetaStore.getState().upgrades.find((upgrade) => upgrade.id === id);
       if (!row) return;
+      audio.playSound('ui');
       if (row.maxed) {
         setHint(`${row.label}: уже максимум`);
         return;

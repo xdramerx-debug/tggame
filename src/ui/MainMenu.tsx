@@ -8,6 +8,7 @@ import { enterDomFullscreen } from '@/mobile/fullscreen';
 import { lockLandscape } from '@/mobile/orientation';
 import { gameHost } from '@/game/GameHost';
 import { useMetaStore } from '@/store/useMetaStore';
+import { audio } from '@/game/audio';
 
 interface MenuButtonProps {
   readonly label: string;
@@ -27,7 +28,10 @@ function MenuButton({ label, hint, onClick, variant = 'ghost' }: MenuButtonProps
       }`}
       style={primary ? { background: 'linear-gradient(180deg, rgba(201,162,39,0.22), rgba(0,0,0,0.65))' } : undefined}
       onPointerDown={() => hapticImpact('light')}
-      onClick={onClick}
+      onClick={() => {
+        audio.playSound('ui');
+        onClick();
+      }}
       data-testid={`menu-${label}`}
     >
       <span className={`hud-outline text-base font-semibold ${primary ? 'text-gold' : 'text-[#e8e3d6]'}`}>{label}</span>
@@ -83,7 +87,7 @@ export function MainMenu(): ReactElement {
       </div>
 
       <footer className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-[#5a6470]">
-        <span>v0.9.0 · stage 9</span>
+        <span>v0.10.0 · stage 10</span>
         <span>landscape only</span>
       </footer>
     </div>

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { QualityLevel } from '@/types/engine';
 import { configureHaptics } from '@/telegram/haptic';
 import { SettingsRepository } from '@/db/repository';
+import { audio } from '@/game/audio';
 
 export type ButtonScale = 'S' | 'M' | 'L';
 export type Handedness = 'right' | 'left';
@@ -21,6 +22,12 @@ export interface SettingsState {
   quality: QualityPreference;
   /** Invert vertical camera axis (accessibility). */
   invertCameraY: boolean;
+  /** Master audio switch. */
+  soundEnabled: boolean;
+  /** 0–1, combat and UI cues. */
+  sfxVolume: number;
+  /** 0–1, ambience loop. */
+  musicVolume: number;
   onboardingDone: boolean;
 }
 
@@ -34,6 +41,9 @@ export interface SettingsActions {
   setHapticIntensity: (value: number) => void;
   setQuality: (quality: QualityPreference) => void;
   setInvertCameraY: (value: boolean) => void;
+  setSoundEnabled: (value: boolean) => void;
+  setSfxVolume: (value: number) => void;
+  setMusicVolume: (value: number) => void;
   setOnboardingDone: (value: boolean) => void;
   /** Loads persisted values from IndexedDB. Safe to call once at boot. */
   hydrate: () => Promise<void>;
@@ -50,6 +60,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
   hapticIntensity: 1,
   quality: 'auto',
   invertCameraY: false,
+  soundEnabled: true,
+  sfxVolume: 0.9,
+  musicVolume: 0.6,
   onboardingDone: false,
 };
 
@@ -59,6 +72,9 @@ const clamp = (value: number, min: number, max: number): number => Math.min(max,
 
 function applyDeviceEffects(state: SettingsState): void {
   configureHaptics({ enabled: state.hapticsEnabled, intensity: state.hapticIntensity });
+  // Audio mirrors the store; the manager itself never reads React state.
+  audio.setEnabled(state.soundEnabled);
+  audio.setVolumes({ master: 0.8, sfx: state.sfxVolume, music: state.musicVolume });
   document.documentElement.style.setProperty('--hud-opacity', state.hudOpacity.toFixed(2));
   document.documentElement.dataset['hudOpacity'] = state.hudOpacity.toFixed(2);
 }
@@ -70,7 +86,8 @@ function applyDeviceEffects(state: SettingsState): void {
 export const useSettingsStore = create<SettingsState & SettingsActions>()((set, get) => {
   const persist = (): void => {
     const { cameraSensitivity, buttonScale, handedness, autoAttack, hudOpacity, hapticsEnabled,
-      hapticIntensity, quality, invertCameraY, onboardingDone } = get();
+      hapticIntensity, quality, invertCameraY, soundEnabled, sfxVolume, musicVolume,
+      onboardingDone } = get();
     void repository.set(STORAGE_KEY, {
       cameraSensitivity,
       buttonScale,
@@ -81,6 +98,9 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()((set, 
       hapticIntensity,
       quality,
       invertCameraY,
+      soundEnabled,
+      sfxVolume,
+      musicVolume,
       onboardingDone,
     });
   };
@@ -103,6 +123,9 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()((set, 
     setHapticIntensity: (value) => update({ hapticIntensity: clamp(value, 0, 1) }),
     setQuality: (quality) => update({ quality }),
     setInvertCameraY: (invertCameraY) => update({ invertCameraY }),
+    setSoundEnabled: (soundEnabled) => update({ soundEnabled }),
+    setSfxVolume: (value) => update({ sfxVolume: clamp(value, 0, 1) }),
+    setMusicVolume: (value) => update({ musicVolume: clamp(value, 0, 1) }),
     setOnboardingDone: (onboardingDone) => update({ onboardingDone }),
 
     hydrate: async () => {
@@ -113,6 +136,8 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()((set, 
         cameraSensitivity: clamp(merged.cameraSensitivity, 0.1, 0.5),
         hudOpacity: clamp(merged.hudOpacity, 0.4, 1),
         hapticIntensity: clamp(merged.hapticIntensity, 0, 1),
+        sfxVolume: clamp(merged.sfxVolume ?? DEFAULT_SETTINGS.sfxVolume, 0, 1),
+        musicVolume: clamp(merged.musicVolume ?? DEFAULT_SETTINGS.musicVolume, 0, 1),
       });
       applyDeviceEffects(get());
     },

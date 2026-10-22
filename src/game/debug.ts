@@ -1,5 +1,6 @@
 import type { QualityLevel } from '@/types/engine';
 import type { DebugSceneSnapshot } from '@/types/scene';
+import type { AudioDebugSnapshot } from '@/game/audio/AudioManager';
 
 export type { DebugSceneSnapshot };
 
@@ -11,6 +12,8 @@ export interface DebugSnapshot {
   readonly fps: number;
   /** Fixed physics steps executed since boot (proves the simulation advances). */
   readonly physicsSteps: number;
+  /** Audio subsystem state: mixer readiness, last cue, volumes. */
+  readonly audio: AudioDebugSnapshot;
 }
 
 interface TenebrisBridge {
@@ -31,7 +34,7 @@ declare global {
  */
 export function installDebugBridge(getState: () => DebugSnapshot | null): () => void {
   if (!import.meta.env.DEV) return () => undefined;
-  window.__TENEBRIS__ = { getState, version: '0.9.0' };
+  window.__TENEBRIS__ = { getState, version: '0.10.0' };
   return () => {
     if (window.__TENEBRIS__?.getState === getState) delete window.__TENEBRIS__;
   };

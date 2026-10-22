@@ -29,9 +29,13 @@ asset-pack не подключён в основном пайплайне.
 | tailwindcss | MIT | стили HUD |
 | vite | MIT | сборка |
 | vitest / @playwright/test | MIT / Apache-2.0 | тесты |
+| howler | MIT | воспроизведение процедурного аудио (WebAudio) |
 
-Запланировано (этапы 3 и 10): `@dimforge/rapier3d-compat` (Apache-2.0), `howler` (MIT),
-`@gltf-transform/*` (MIT), `sharp`/`node-canvas` (Apache-2.0 / MIT) для офлайн-текстур.
+Запланировано: `@gltf-transform/*` (MIT), `sharp`/`node-canvas` (Apache-2.0 / MIT) для офлайн-текстур.
+
+Аудио: все 18 дорожек синтезированы кодом (`scripts/audio/*.ts`), ни одного
+скачанного сэмпла. Howler используется только как плеер — никаких его ассетов
+в бандле нет.
 
 ## Благодарности
 

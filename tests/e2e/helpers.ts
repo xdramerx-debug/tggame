@@ -31,6 +31,15 @@ export interface DebugState {
   readonly quality: string;
   readonly fps: number;
   readonly physicsSteps: number;
+  readonly audio?: {
+    readonly enabled: boolean;
+    readonly ready: boolean;
+    readonly loaded: number;
+    readonly total: number;
+    readonly ambience: boolean;
+    readonly plays: number;
+    readonly lastId: string | null;
+  };
 }
 
 /** Boots the app into a run with a pinned seed and quality tier. */

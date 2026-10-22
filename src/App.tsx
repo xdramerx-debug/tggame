@@ -15,6 +15,7 @@ import { useMetaStore } from '@/store/useMetaStore';
 import { gameHost } from './game/GameHost';
 import { installGestureGuards } from './mobile/gestures';
 import { installLifecycle } from './mobile/lifecycle';
+import { audio } from './game/audio';
 import { lockLandscape, isLandscape } from './mobile/orientation';
 import { watchSafeArea } from './telegram/viewport';
 import { watchTheme } from './telegram/theme';
@@ -55,6 +56,10 @@ export function App(): ReactElement {
   useEffect(() => {
     const cleanups: (() => void)[] = [];
     cleanups.push(installGestureGuards());
+    // iOS suspends the WebAudio context until a gesture touches the page.
+    const unlockAudio = (): void => audio.unlock();
+    window.addEventListener('pointerdown', unlockAudio, { once: true, capture: true });
+    cleanups.push(() => window.removeEventListener('pointerdown', unlockAudio, { capture: true }));
     cleanups.push(
       watchSafeArea(),
       watchTheme(() => undefined),

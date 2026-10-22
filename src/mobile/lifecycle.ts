@@ -1,3 +1,5 @@
+import { audio } from '@/game/audio';
+
 /** Reasons the game loop is stopped. Kept for diagnostics and autosave policy. */
 export type PauseReason = 'hidden' | 'blur' | 'pagehide' | 'freeze' | 'manual';
 
@@ -22,6 +24,8 @@ export function installLifecycle(handlers: LifecycleHandlers): () => void {
   const pause = (reason: PauseReason): void => {
     if (paused) return;
     paused = true;
+    // Audio must die with the loop: Telegram WebView keeps playing otherwise.
+    audio.suspend();
     handlers.onPause(reason);
   };
 
@@ -29,6 +33,7 @@ export function installLifecycle(handlers: LifecycleHandlers): () => void {
     if (!paused) return;
     if (document.visibilityState === 'hidden') return;
     paused = false;
+    audio.resume();
     handlers.onResume();
   };
 

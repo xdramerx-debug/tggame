@@ -288,7 +288,7 @@ export function GameScreen(): ReactElement {
 
       <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+6px)] z-0 flex justify-center">
         <p className="hud-panel hud-outline px-3 py-1 text-center text-[11px] leading-snug text-[#9aa3ae]">
-          Этап 9 · босс и алтарь · ?seed=42 · ?quality=low
+          Этап 10 · звук · ?seed=42 · ?quality=low
         </p>
       </div>
     </div>
