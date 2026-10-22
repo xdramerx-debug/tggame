@@ -6,6 +6,7 @@ import type { MonsterDefinition } from '@/game/combat/monsterTable';
 import { Health } from '@/game/combat/Health';
 import type { DamageResult } from '@/game/combat/Health';
 import { EnemyBrain } from '@/game/ai/EnemyBrain';
+import { phaseMultipliers } from '@/game/ai/BossPhase';
 import { CharacterModel, placeCharacter } from './CharacterModel';
 import type { LoadedCharacter } from '@/game/assets/AssetLoader';
 import { directionToYaw, shortestAngleDelta } from '@/input/movement';
@@ -42,6 +43,9 @@ export class Enemy {
   private deathTimer = 0;
   private strikePending = false;
   private hitFlash = 0;
+  private phaseValue = -1;
+  /** Called whenever the boss crosses an enrage threshold. */
+  onPhaseChange: ((phase: { index: number; taunt: string }) => void) | null = null;
 
   constructor(options: EnemyOptions) {
     this.definition = options.definition;
@@ -81,6 +85,35 @@ export class Enemy {
     return this.health.isDead;
   }
 
+  /** Bosses drive the top-of-screen health bar. */
+  get isBoss(): boolean {
+    return this.definition.boss === true;
+  }
+
+  get name(): string {
+    return this.definition.label;
+  }
+
+  get hpRatio(): number {
+    return this.health.ratio;
+  }
+
+  /** Current enrage step (−1 before any phase triggers). */
+  get phase(): number {
+    return this.phaseValue;
+  }
+
+  /** Speed/damage/cooldown multipliers of the active phase. */
+  private get multipliers(): { speed: number; damage: number; cooldown: number } {
+    if (!this.isBoss || !this.definition.phases) return { speed: 1, damage: 1, cooldown: 1 };
+    return phaseMultipliers(this.hpRatio, this.definition.phases);
+  }
+
+  /** Damage of one landed swing, including the active phase bonus. */
+  get strikeDamage(): number {
+    return this.definition.damage * this.multipliers.damage;
+  }
+
   /** True on the tick the swing lands (consumed by the scene). */
   takeStrike(): boolean {
     if (!this.strikePending) return false;
@@ -118,11 +151,12 @@ export class Enemy {
     const decision = this.brain.update({ distance, hasLineOfSight, dt });
     if (decision.strike) this.strikePending = true;
 
+    const speed = this.definition.speed * this.multipliers.speed;
     let moveX = 0;
     let moveZ = 0;
     if (decision.moveTowardTarget && distance > this.definition.attackRange * 0.85) {
-      moveX = (dx / distance) * this.definition.speed;
-      moveZ = (dz / distance) * this.definition.speed;
+      moveX = (dx / distance) * speed;
+      moveZ = (dz / distance) * speed;
     }
 
     const knockbackSpeed = this.knockback.length();
@@ -163,8 +197,11 @@ export class Enemy {
       this.brain.kill();
       this.model?.playDeath();
     } else {
-      this.brain.stagger();
+      // Bosses shrug off the stagger: their own telegraph must be dodgeable,
+      // not cancellable by chip damage.
+      if (!this.isBoss) this.brain.stagger();
       this.model?.playHit();
+      this.updatePhase();
     }
     return result;
   }
@@ -187,6 +224,17 @@ export class Enemy {
     this.model?.dispose();
     this.body.dispose();
     this.group.removeFromParent();
+  }
+
+  /** Fires the phase callback once per threshold crossing. */
+  private updatePhase(): void {
+    const phases = this.definition.phases;
+    if (!phases || phases.length === 0) return;
+    const next = phaseMultipliers(this.hpRatio, phases).index;
+    if (next <= this.phaseValue) return;
+    this.phaseValue = next;
+    const phase = phases[next];
+    if (phase) this.onPhaseChange?.({ index: next, taunt: phase.taunt });
   }
 
   private applyKnockback(dt: number): void {

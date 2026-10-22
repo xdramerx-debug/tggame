@@ -17,6 +17,7 @@ import type { InventorySnapshot } from '@/game/loot/RunState';
 import type { RunSummary } from '@/game/scenes/DungeonScene';
 import type { ItemSlotId } from '@/game/loot/itemTable';
 import { hapticImpact } from '@/telegram/haptic';
+import type { StatBonuses } from '@/game/player/PlayerStats';
 
 export interface EngineOptions {
   readonly canvas: HTMLCanvasElement;
@@ -30,6 +31,22 @@ export interface EngineOptions {
   readonly onDeath?: (summary: RunSummary) => void;
   /** Overrides the run seed; otherwise `?seed=` or a random one is used. */
   readonly seed?: number;
+  /** Permanent meta-progression bonuses, read once at scene creation. */
+  readonly metaBonuses?: StatBonuses;
+  /** Extra starting rations from meta upgrades. */
+  readonly startingRations?: number;
+}
+
+/**
+ * Dev-only starting floor (`?floor=3` boots straight into the boss arena).
+ * Never read in production builds: QA needs the boss without a 10-minute walk.
+ */
+function resolveStartFloor(): number | undefined {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return undefined;
+  const param = new URLSearchParams(window.location.search).get('floor');
+  if (param === null) return undefined;
+  const parsed = Number.parseInt(param, 10);
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 3 ? parsed : undefined;
 }
 
 /** Reads the deterministic seed used by QA/Playwright (`?seed=1234`). */
@@ -170,6 +187,9 @@ export class Engine {
       onNotify: (message) => this.options.onMessage?.(message),
       onHaptic: (kind) => hapticImpact(kind),
       onDeath: (summary) => this.options.onDeath?.(summary),
+      floor: resolveStartFloor(),
+      metaBonuses: this.options.metaBonuses,
+      startingRations: this.options.startingRations,
     });
     this.physicsWorld.primeQueries();
     this.gameScene = scene;
@@ -257,6 +277,16 @@ export class Engine {
     this.gameScene?.triggerAction(action);
   }
 
+  /** Boss health bar data, or null when no boss is engaged. */
+  getBossState(): { name: string; ratio: number; phase: number } | null {
+    return this.gameScene?.getBossState?.() ?? null;
+  }
+
+  /** Applies meta upgrades bought in the menu to the live run. */
+  setMetaBonuses(bonuses: StatBonuses, startingRations = 0): void {
+    this.gameScene?.setMetaBonuses?.(bonuses, startingRations);
+  }
+
   /** Current interaction offer (drives the ⚡ button visibility). */
   getInteractionHint(): InteractionHint | null {
     return this.gameScene?.getInteractionHint() ?? null;
@@ -293,6 +323,15 @@ export class Engine {
   /** Dev-only: hurt the player (`?kill=1` for the death-screen smoke test). */
   debugHurt(amount: number): void {
     this.gameScene?.debugHurt?.(amount);
+  }
+
+  /** Dev-only: drop the player next to the boss arena (`?boss=1`). */
+  debugBossArena(): void {
+    const scene = this.gameScene;
+    if (!scene?.debugBossPosition) return;
+    const arena = scene.debugBossPosition();
+    if (!arena) return;
+    scene.teleportTo?.({ x: arena.x + 5, z: arena.z });
   }
 
   /** Dev-only: put a training skeleton in front of the player (`?dummy=1`). */

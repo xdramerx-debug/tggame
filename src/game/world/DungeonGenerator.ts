@@ -38,6 +38,9 @@ export const DUNGEON_CONFIG = roomData as unknown as DungeonConfig;
 /** Cold rune light marking the stairs down (also the stage-9 exit gate). */
 const EXIT_LIGHT: RoomLightSpec = { color: '#4a7c8c', intensity: 5, distance: 9, flicker: false };
 
+/** Boss arena light: the only red room on the floor, readable from a doorway. */
+const BOSS_LIGHT: RoomLightSpec = { color: '#c8342e', intensity: 7.5, distance: 12, flicker: true };
+
 /**
  * Procedural dungeon: BSP space partition → rooms → MST corridors → doors.
  *
@@ -144,18 +147,20 @@ function attemptGeneration(rng: Rng, options: AttemptOptions): Dungeon | null {
   if (!entranceRoom) return null;
   if (!isFullyConnected(tiles, width, height, roomCenter(entranceRoom))) return null;
 
-  const dungeonRooms = assignRoomTypes(rooms, entranceRoom, rng, floor);
+  const dungeonRooms = assignRoomTypes(rooms, entranceRoom, rng);
   const doors = findDoors(tiles, roomIds, width, height, dungeonRooms);
 
   const entrance = roomCenter(entranceRoom);
   const exitRoom = findExitRoom(dungeonRooms, entrance);
   // The farthest room becomes the stairwell: typed `exit` so lighting and the
   // stage-9 encounter table can find it without a second distance pass.
-  const finalRooms = dungeonRooms.map((room) =>
-    room.id === exitRoom.id
-      ? { ...room, type: 'exit' as const, light: EXIT_LIGHT }
-      : room,
-  );
+  // ...and on the boss floor those same stairs are the arena: the boss seals the
+  // run, so the room is typed `boss` and the exit becomes a locked gate.
+  const finalRooms = dungeonRooms.map((room) => {
+    if (room.id !== exitRoom.id) return room;
+    if (floor === 3) return { ...room, type: 'boss' as const, light: BOSS_LIGHT };
+    return { ...room, type: 'exit' as const, light: EXIT_LIGHT };
+  });
 
   return {
     seed: options.seed,
@@ -298,11 +303,11 @@ export function isFullyConnected(
 }
 
 /** Assigns room types from the weighted JSON table, with floor-aware rules. */
-function assignRoomTypes(rooms: readonly Room[], entranceRoom: Room, rng: Rng, floor: number): DungeonRoom[] {
+function assignRoomTypes(rooms: readonly Room[], entranceRoom: Room, rng: Rng): DungeonRoom[] {
   const weighted: RoomTypeDefinition[] = [];
   for (const definition of DUNGEON_CONFIG.roomTypes) {
-    // Boss only on the third floor; altars become more common deeper down.
-    if (definition.id === 'boss' && floor !== 3) continue;
+    // The boss room is never rolled: it is placed on the farthest room below.
+    if (definition.id === 'boss') continue;
     const repeat = Math.max(1, Math.round(definition.weight));
     for (let i = 0; i < repeat; i += 1) weighted.push(definition);
   }
@@ -468,7 +473,14 @@ function buildFallbackDungeon(width: number, height: number, floor: number, seed
     }
     rooms.push({
       ...room,
-      type: i === 0 ? 'entrance' : i === count - 1 ? 'exit' : 'combat',
+      type:
+        i === 0
+          ? 'entrance'
+          : i === count - 1
+            ? floor === 3
+              ? 'boss'
+              : 'exit'
+            : 'combat',
       light: { color: '#ffa54a', intensity: 5, distance: 9, flicker: true },
       center: roomCenter(room),
       spawnPoints: [{ x: room.x + 2, z: room.y + 2 }],

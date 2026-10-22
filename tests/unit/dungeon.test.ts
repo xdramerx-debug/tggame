@@ -61,7 +61,10 @@ describe('rooms.json content table', () => {
     expect(DUNGEON_CONFIG.roomTypes.length).toBeGreaterThanOrEqual(4);
     for (const definition of DUNGEON_CONFIG.roomTypes) {
       expect(KNOWN_TYPES).toContain(definition.id);
-      expect(definition.weight).toBeGreaterThan(0);
+      // The boss arena is placed explicitly on the deepest floor, so its weight
+      // is 0; every other room type must be rollable.
+      if (definition.id === 'boss') expect(definition.weight).toBe(0);
+      else expect(definition.weight).toBeGreaterThan(0);
       expect(definition.props.length).toBeGreaterThan(0);
       expect(definition.light.color).toMatch(/^#[0-9a-f]{6}$/i);
       expect(definition.light.intensity).toBeGreaterThan(0);

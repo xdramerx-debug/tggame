@@ -1,35 +1,98 @@
 {
   "roomTypes": [
     {
+      "id": "boss",
+      "weight": 0,
+      "label": "Арена Смотрителя",
+      "light": {
+        "color": "#c8342e",
+        "intensity": 7.5,
+        "distance": 12,
+        "flicker": true
+      },
+      "props": [
+        "bones",
+        "bones",
+        "torch",
+        "rubble"
+      ]
+    },
+    {
       "id": "combat",
       "weight": 5,
       "label": "Зал боя",
-      "light": { "color": "#ffa54a", "intensity": 6.5, "distance": 9, "flicker": true },
-      "props": ["torch", "torch", "bones", "rubble"]
+      "light": {
+        "color": "#ffa54a",
+        "intensity": 6.5,
+        "distance": 9,
+        "flicker": true
+      },
+      "props": [
+        "torch",
+        "torch",
+        "bones",
+        "rubble"
+      ]
     },
     {
       "id": "treasure",
       "weight": 2,
       "label": "Сокровищница",
-      "light": { "color": "#c9a227", "intensity": 5.5, "distance": 8, "flicker": false },
-      "props": ["chest", "torch", "rubble"]
+      "light": {
+        "color": "#c9a227",
+        "intensity": 5.5,
+        "distance": 8,
+        "flicker": false
+      },
+      "props": [
+        "chest",
+        "torch",
+        "rubble"
+      ]
     },
     {
       "id": "campfire",
       "weight": 2,
       "label": "Привал",
-      "light": { "color": "#ff8a3d", "intensity": 9, "distance": 11, "flicker": true },
-      "props": ["campfire", "bones"]
+      "light": {
+        "color": "#ff8a3d",
+        "intensity": 9,
+        "distance": 11,
+        "flicker": true
+      },
+      "props": [
+        "campfire",
+        "bones"
+      ]
     },
     {
       "id": "altar",
       "weight": 1,
       "label": "Алтарь",
-      "light": { "color": "#4a7c8c", "intensity": 6, "distance": 10, "flicker": false },
-      "props": ["altar", "candles", "candles", "candles"]
+      "light": {
+        "color": "#4a7c8c",
+        "intensity": 6,
+        "distance": 10,
+        "flicker": false
+      },
+      "props": [
+        "altar",
+        "candles",
+        "candles",
+        "candles"
+      ]
     }
   ],
-  "corridorLight": { "color": "#5a6a7a", "intensity": 2.4, "distance": 6, "flicker": false },
-  "roomHeight": { "min": 3, "max": 5, "corridor": 2.8 },
+  "corridorLight": {
+    "color": "#5a6a7a",
+    "intensity": 2.4,
+    "distance": 6,
+    "flicker": false
+  },
+  "roomHeight": {
+    "min": 3,
+    "max": 5,
+    "corridor": 2.8
+  },
   "corridorWidth": 2
 }

@@ -5,11 +5,13 @@ import { GameCanvas } from './ui/components/GameCanvas';
 import { SplashScreen } from './ui/SplashScreen';
 import { MainMenu } from './ui/MainMenu';
 import { GameScreen } from './ui/GameScreen';
+import { MetaScreen } from './ui/MetaScreen';
 import { SettingsSheet } from './ui/SettingsSheet';
 import { CreditsSheet } from './ui/CreditsSheet';
 import { OrientationOverlay } from './ui/OrientationOverlay';
 import { useGameStore, useUiStore } from './store/useGameStore';
 import { useSettingsStore } from './store/useSettingsStore';
+import { useMetaStore } from './store/useMetaStore';
 import { gameHost } from './game/GameHost';
 import { installGestureGuards } from './mobile/gestures';
 import { installLifecycle } from './mobile/lifecycle';
@@ -71,6 +73,8 @@ export function App(): ReactElement {
 
     void (async () => {
       await useSettingsStore.getState().hydrate();
+      // Meta bonuses must be known before the engine builds the dungeon scene.
+      await useMetaStore.getState().hydrate();
       const settings = useSettingsStore.getState();
       configureHaptics({ enabled: settings.hapticsEnabled, intensity: settings.hapticIntensity });
       const engine = gameHost.getEngine();
@@ -137,6 +141,19 @@ export function App(): ReactElement {
             transition={{ duration: 0.2 }}
           >
             <MainMenu />
+          </motion.div>
+        ) : null}
+
+        {screen === 'meta' ? (
+          <motion.div
+            key="meta"
+            className="absolute inset-0"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <MetaScreen onBack={() => setScreen('menu')} />
           </motion.div>
         ) : null}
 

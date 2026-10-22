@@ -65,6 +65,7 @@ export class RunState {
   private goldValue = 0;
   private xpValue = 0;
   private rationsValue = SURVIVAL_CONFIG.rations.startCount;
+  private startingRations = SURVIVAL_CONFIG.rations.startCount;
 
   get gold(): number {
     return this.goldValue;
@@ -76,6 +77,11 @@ export class RunState {
 
   get rations(): number {
     return this.rationsValue;
+  }
+
+  /** Restart count, including meta upgrades (applies on `reset()`). */
+  setStartingRations(count: number): void {
+    this.startingRations = Math.max(0, Math.trunc(count));
   }
 
   addRations(count: number): void {
@@ -160,7 +166,7 @@ export class RunState {
     this.inventory.clear();
     this.goldValue = 0;
     this.xpValue = 0;
-    this.rationsValue = SURVIVAL_CONFIG.rations.startCount;
+    this.rationsValue = this.startingRations;
   }
 }
 

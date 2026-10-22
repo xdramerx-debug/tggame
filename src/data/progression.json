@@ -1,0 +1,85 @@
+{
+  "currency": {
+    "name": "Угли",
+    "icon": "🔥"
+  },
+  "rewards": {
+    "perKill": 1,
+    "perFloor": 6,
+    "perBoss": 40,
+    "perChest": 1,
+    "perRun": 4
+  },
+  "upgrades": [
+    {
+      "id": "vitality",
+      "label": "Живучесть",
+      "description": "+10 к максимуму здоровья за уровень",
+      "icon": "❤",
+      "maxLevel": 5,
+      "baseCost": 12,
+      "costStep": 10,
+      "stats": {
+        "maxHp": 10
+      }
+    },
+    {
+      "id": "might",
+      "label": "Мощь",
+      "description": "+3 к урону за уровень",
+      "icon": "⚔",
+      "maxLevel": 5,
+      "baseCost": 14,
+      "costStep": 12,
+      "stats": {
+        "damage": 3
+      }
+    },
+    {
+      "id": "endurance",
+      "label": "Выносливость",
+      "description": "+12 к максимуму стамины за уровень",
+      "icon": "🌀",
+      "maxLevel": 4,
+      "baseCost": 10,
+      "costStep": 8,
+      "stats": {
+        "stamina": 12
+      }
+    },
+    {
+      "id": "carapace",
+      "label": "Панцирь",
+      "description": "+3 к броне за уровень",
+      "icon": "🛡",
+      "maxLevel": 4,
+      "baseCost": 12,
+      "costStep": 10,
+      "stats": {
+        "armor": 3
+      }
+    },
+    {
+      "id": "precision",
+      "label": "Точность",
+      "description": "+3 % к шансу крита за уровень",
+      "icon": "✦",
+      "maxLevel": 3,
+      "baseCost": 16,
+      "costStep": 14,
+      "stats": {
+        "critChance": 0.03
+      }
+    },
+    {
+      "id": "supplies",
+      "label": "Припасы",
+      "description": "+1 паёк на старте забега за уровень",
+      "icon": "🍖",
+      "maxLevel": 3,
+      "baseCost": 8,
+      "costStep": 6,
+      "startingRations": 1
+    }
+  ]
+}

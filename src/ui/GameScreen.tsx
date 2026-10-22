@@ -11,6 +11,8 @@ import { setCloseConfirmation } from '@/telegram/viewport';
 import { DangerVignette, HealthBar, useVitals } from './components/VitalsHud';
 import { InventorySheet } from './InventorySheet';
 import { DeathScreen } from './DeathScreen';
+import { BossBar } from './components/BossBar';
+import { useMetaStore } from '@/store/useMetaStore';
 import type { RunSummary } from '@/game/scenes/DungeonScene';
 
 /** Polls the scene for an interaction offer; cheap and only while in a run. */
@@ -89,14 +91,25 @@ export function GameScreen(): ReactElement {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [death, setDeath] = useState<RunSummary | null>(null);
 
-  // The scene reports the end of a run; the overlay replaces the HUD.
+  const grantRun = useMetaStore((state) => state.grantRun);
+  const reward = useMetaStore((state) => state.lastReward);
+
+  // The scene reports the end of a run; the overlay replaces the HUD. Embers are
+  // paid out here, once per run, because the engine only knows the summary.
   useEffect(
     () =>
       gameHost.setDeathListener((summary) => {
         setInventoryOpen(false);
         setDeath(summary);
+        grantRun({
+          kills: summary.kills,
+          floor: summary.floor,
+          chestsOpened: summary.chestsOpened,
+          cause: summary.cause,
+          seconds: summary.seconds,
+        });
       }),
-    [],
+    [grantRun],
   );
 
   useEffect(() => {
@@ -112,6 +125,19 @@ export function GameScreen(): ReactElement {
     const params = new URLSearchParams(window.location.search);
     gameHost.setPhysicsDebug(params.get('physics') === '1');
     if (params.get('dummy') === '1') gameHost.spawnDummy();
+    // `?boss=1` walks the player into the arena: the boss bar and phase changes
+    // are then reachable without clearing two floors first.
+    if (params.get('boss') === '1') {
+      const spawnTimer = window.setInterval(() => {
+        gameHost.debugBossArena();
+        if (gameHost.getBossState() !== null) window.clearInterval(spawnTimer);
+      }, 250);
+      const stopTimer = window.setTimeout(() => window.clearInterval(spawnTimer), 5000);
+      return () => {
+        window.clearInterval(spawnTimer);
+        window.clearTimeout(stopTimer);
+      };
+    }
     // `?kill=1` ends the run immediately: the death screen must be reachable
     // without waiting for a monster to land a finishing blow. The scene may
     // still be building on the first frames, so retry until it takes effect.
@@ -238,11 +264,18 @@ export function GameScreen(): ReactElement {
         </div>
       </div>
 
+      <BossBar />
       <InventorySheet open={inventoryOpen} onClose={closeInventory} />
       {death ? (
         <DeathScreen
           summary={death}
+          reward={reward}
           onRestart={restartRun}
+          onAltar={() => {
+            setDeath(null);
+            pauseToMenu();
+            setScreen('meta');
+          }}
           onMenu={() => {
             setDeath(null);
             pauseToMenu();
@@ -255,7 +288,7 @@ export function GameScreen(): ReactElement {
 
       <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+6px)] z-0 flex justify-center">
         <p className="hud-panel hud-outline px-3 py-1 text-center text-[11px] leading-snug text-[#9aa3ae]">
-          Этап 8 · выживание, голод и костры · ?seed=42 · ?quality=low
+          Этап 9 · босс и алтарь · ?seed=42 · ?quality=low
         </p>
       </div>
     </div>

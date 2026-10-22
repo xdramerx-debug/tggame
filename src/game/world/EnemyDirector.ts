@@ -1,6 +1,6 @@
 import { createRng } from './bsp';
 import { distanceToRoom } from './DungeonMesh';
-import { pickMonsterForRoom, SPAWN_RULES } from '@/game/combat/monsterTable';
+import { bossForFloor, pickMonsterForRoom, SPAWN_RULES } from '@/game/combat/monsterTable';
 import type { MonsterDefinition, SpawnRules } from '@/game/combat/monsterTable';
 import type { Dungeon, DungeonRoom } from './dungeonTypes';
 
@@ -10,6 +10,8 @@ export interface PlannedSpawn {
   readonly definition: MonsterDefinition;
   readonly x: number;
   readonly z: number;
+  /** True for the floor's boss (its body is never culled by distance). */
+  readonly boss?: boolean;
 }
 
 interface ActiveEnemy {
@@ -97,6 +99,9 @@ export class EnemyDirector {
 
     for (const enemy of active) {
       if (enemy.dead) continue; // corpses fade out on their own
+      // The boss is bound to its arena: it must not vanish mid-fight just
+      // because the player backed off to a corridor.
+      if (this.isBossSpawn(enemy.id)) continue;
       if (this.distanceToPlayer(enemy, player) > this.rules.deactivateRange) {
         despawn.push(enemy.id);
         this.spawned.delete(enemy.id);
@@ -132,6 +137,10 @@ export class EnemyDirector {
     return { spawn, despawn };
   }
 
+  isBossSpawn(id: number): boolean {
+    return this.planned.some((spawn) => spawn.id === id && spawn.boss === true);
+  }
+
   private distanceToPlayer(point: { x: number; z: number }, player: { x: number; z: number }): number {
     return Math.hypot(point.x - player.x, point.z - player.z);
   }
@@ -162,6 +171,23 @@ export function planSpawns(
   let id = 0;
 
   for (const room of dungeon.rooms) {
+    const boss = room.type === 'boss' ? bossForFloor(floor) : null;
+    if (boss) {
+      // The boss owns the middle of its arena and never shares the room's
+      // random table: a floor with a boss room must always contain it.
+      spawns.push({ id, roomId: room.id, definition: boss, x: room.center.x, z: room.center.z, boss: true });
+      id += 1;
+      const adds = pickSpawnPoints(room, rules.bossRoomAdds, rng);
+      const addDefinition = pickMonsterForRoom('boss', floor, rng);
+      if (addDefinition) {
+        for (const point of adds) {
+          spawns.push({ id, roomId: room.id, definition: addDefinition, x: point.x, z: point.z });
+          id += 1;
+        }
+      }
+      continue;
+    }
+
     const definition = pickMonsterForRoom(room.type, floor, rng);
     if (!definition) continue;
     const points = pickSpawnPoints(room, rules.perRoom, rng);

@@ -375,6 +375,87 @@ describe('DungeonScene (headless)', () => {
     scene.dispose();
   });
 
+  it('folds meta upgrades into the stat block and the starting rations', () => {
+    const base = new DungeonScene({ physics, seed: 7 });
+    const baseSnapshot = base.getDebugSnapshot();
+    base.dispose();
+
+    const scene = new DungeonScene({
+      physics,
+      seed: 7,
+      metaBonuses: { damage: 6, armor: 6, maxHp: 30, stamina: 24, critChance: 0.06, critMultiplier: 0 },
+      startingRations: 2,
+    });
+    const snapshot = scene.getDebugSnapshot();
+    expect(snapshot.maxHp).toBe((baseSnapshot.maxHp ?? 0) + 30);
+    expect(snapshot.maxStamina).toBe((baseSnapshot.maxStamina ?? 0) + 24);
+    expect(snapshot.rations).toBe((baseSnapshot.rations ?? 0) + 2);
+    scene.dispose();
+  });
+
+  it('applies upgrades bought between runs via setMetaBonuses', () => {
+    const scene = new DungeonScene({ physics, seed: 7 });
+    const before = scene.getDebugSnapshot().maxHp ?? 0;
+    scene.setMetaBonuses(
+      { damage: 0, armor: 0, maxHp: 20, stamina: 0, critChance: 0, critMultiplier: 0 },
+      2,
+    );
+    expect(scene.getDebugSnapshot().maxHp).toBe(before + 20);
+    // Starting rations apply to the *next* run, not the one in progress.
+    scene.restartRun(99);
+    expect(scene.getDebugSnapshot().rations).toBe(3);
+    scene.dispose();
+  });
+
+  it('spawns the warden on floor 3 and ends the run in victory when it dies', () => {
+    const summaries: { cause: string; floor: number; chestsOpened: number }[] = [];
+    const messages: string[] = [];
+    const scene = new DungeonScene({
+      physics,
+      seed: 31,
+      floor: 3,
+      onDeath: (summary) => summaries.push({ ...summary }),
+      onNotify: (message) => messages.push(message),
+    });
+    const arena = scene.debugBossPosition();
+    expect(arena).not.toBeNull();
+    if (!arena) return;
+
+    // Walk into the arena so the boss spawns within the activation range.
+    scene.teleportTo({ x: arena.x + 6, z: arena.z });
+    for (let i = 0; i < 120; i += 1) {
+      physics.step(1 / 60);
+      scene.update(1 / 60, i / 60);
+    }
+
+    const boss = scene.getBossState();
+    expect(boss?.name).toBe('Смотритель глубин');
+    expect(boss?.ratio).toBe(1);
+    expect(boss?.phase).toBe(0);
+
+    expect(scene.debugKillBoss()).toBe(true);
+    for (let i = 0; i < 30; i += 1) {
+      physics.step(1 / 60);
+      scene.update(1 / 60, i / 60);
+    }
+
+    expect(scene.isDead).toBe(true);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]?.cause).toBe('victory');
+    expect(summaries[0]?.floor).toBe(3);
+    // Victory is not a death: the summary must still carry the chest count.
+    expect(summaries[0]?.chestsOpened).toBe(0);
+    expect(scene.getBossState()).toBeNull();
+    scene.dispose();
+  });
+
+  it('has no boss on the first two floors', () => {
+    const scene = new DungeonScene({ physics, seed: 5, floor: 1 });
+    expect(scene.debugBossPosition()).toBeNull();
+    expect(scene.getBossState()).toBeNull();
+    scene.dispose();
+  });
+
   it('counts attacks and dashes triggered by the HUD', () => {
     const scene = new DungeonScene({ physics, seed: 7 });
     scene.triggerAction('attack');
@@ -413,7 +494,7 @@ describe('DungeonScene (headless)', () => {
     expect(physics.world.colliders.len()).toBe(0);
   });
 
-  it('wraps back to floor 1 after the last floor and reports it', () => {
+  it('stops on the last floor instead of wrapping (the boss seals the stairs)', () => {
     const messages: string[] = [];
     const scene = new DungeonScene({
       physics,
@@ -423,9 +504,11 @@ describe('DungeonScene (headless)', () => {
     });
     scene.descend();
     expect(scene.floorNumber).toBe(2);
+    // A second descent must not silently loop back to floor 1: the run ends
+    // with the boss, so the deep floor stays reachable only by winning.
     scene.descend();
-    expect(scene.floorNumber).toBe(1);
-    expect(messages).toEqual(['Этаж 2', 'Этаж 1']);
+    expect(scene.floorNumber).toBe(2);
+    expect(messages).toEqual(['Этаж 2']);
     scene.dispose();
   });
 });

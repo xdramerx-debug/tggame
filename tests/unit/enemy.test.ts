@@ -4,6 +4,7 @@ import { Enemy } from '@/game/entities/Enemy';
 import { monsterById } from '@/game/combat/monsterTable';
 
 const SKELETON = monsterById('skeleton');
+const WARDEN = monsterById('warden');
 
 describe('Enemy', () => {
   let physics: PhysicsWorld;
@@ -90,5 +91,68 @@ describe('Enemy', () => {
     }
     expect(enemy.position.z).toBeGreaterThan(startZ);
     enemy.dispose();
+  });
+
+  describe('boss', () => {
+    function boss(): Enemy {
+      if (!WARDEN) throw new Error('warden missing from monsters.json');
+      return new Enemy({ definition: WARDEN, model: null, physics, spawn: { x: 0, z: 0 }, index: 77 });
+    }
+
+    it('identifies itself and starts without a phase', () => {
+      const enemy = boss();
+      expect(enemy.isBoss).toBe(true);
+      expect(enemy.phase).toBe(-1);
+      expect(enemy.hpRatio).toBe(1);
+      expect(enemy.name).toBe(WARDEN?.label);
+      enemy.dispose();
+    });
+
+    it('announces each enrage step exactly once, in order', () => {
+      const enemy = boss();
+      const seen: { index: number; taunt: string }[] = [];
+      enemy.onPhaseChange = (phase) => seen.push(phase);
+
+      const total = WARDEN?.maxHp ?? 1;
+      // Chip damage down to ~50 %: the first threshold (66 %) must fire once.
+      for (let i = 0; i < 300 && enemy.hpRatio > 0.5; i += 1) {
+        enemy.takeDamage(total * 0.02, { x: 0, z: -1 }, false);
+      }
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.index).toBe(0);
+      expect(seen[0]?.taunt).toBe(WARDEN?.phases?.[0]?.taunt);
+      expect(enemy.phase).toBe(0);
+
+      for (let i = 0; i < 300 && enemy.hpRatio > 0.2; i += 1) {
+        enemy.takeDamage(total * 0.02, { x: 0, z: -1 }, false);
+      }
+      expect(seen).toHaveLength(2);
+      expect(seen[1]?.index).toBe(1);
+      expect(enemy.phase).toBe(1);
+      enemy.dispose();
+    });
+
+    it('hits harder and shrugs off stagger in the last phase', () => {
+      const enemy = boss();
+      const base = WARDEN?.damage ?? 0;
+      expect(enemy.strikeDamage).toBe(base);
+
+      const total = WARDEN?.maxHp ?? 1;
+      for (let i = 0; i < 300 && enemy.hpRatio > 0.3; i += 1) {
+        enemy.takeDamage(total * 0.02, { x: 0, z: -1 }, false);
+      }
+      expect(enemy.strikeDamage).toBeGreaterThan(base);
+      expect(enemy.strikeDamage).toBeCloseTo(base * (WARDEN?.phases?.[1]?.damageMul ?? 1), 5);
+      // A boss is not interruptible: chip damage must not cancel its telegraph.
+      expect(enemy.brain.state).not.toBe('stagger');
+      enemy.dispose();
+    });
+
+    it('still staggers ordinary monsters', () => {
+      const enemy = spawn();
+      enemy.takeDamage(5, { x: 1, z: 0 }, false);
+      expect(enemy.brain.state).toBe('stagger');
+      enemy.dispose();
+    });
   });
 });

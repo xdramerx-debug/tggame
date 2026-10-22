@@ -4,6 +4,7 @@ import type { DebugSnapshot } from '@/game/debug';
 import type { InventorySnapshot } from '@/game/loot/RunState';
 import type { RunSummary } from '@/game/scenes/DungeonScene';
 import type { ItemSlotId } from '@/game/loot/itemTable';
+import type { StatBonuses } from '@/game/player/PlayerStats';
 import { Engine } from './core/Engine';
 import { hapticSelection } from '@/telegram/haptic';
 
@@ -28,6 +29,19 @@ class GameHost {
   private callbacks: GameHostCallbacks = {};
   private deathListener: ((summary: RunSummary) => void) | null = null;
   private pendingQuality: QualityLevel | null = null;
+  private metaBonuses: StatBonuses | null = null;
+  private startingRations = 0;
+
+  /**
+   * Provides the permanent upgrade bonuses before boot. Called by the app on
+   * start-up once IndexedDB has been read; the value is re-applied to the live
+   * scene when the player buys something between runs.
+   */
+  setMetaBonuses(bonuses: StatBonuses, startingRations = 0): void {
+    this.metaBonuses = bonuses;
+    this.startingRations = startingRations;
+    this.engine?.setMetaBonuses(bonuses, startingRations);
+  }
 
   setCallbacks(callbacks: GameHostCallbacks): void {
     this.callbacks = callbacks;
@@ -82,6 +96,8 @@ class GameHost {
         // The loop keeps running so the hero's death clip can play behind the
         // summary; gameplay is frozen inside the scene itself.
         onDeath: (summary) => this.deathListener?.(summary),
+        metaBonuses: this.metaBonuses ?? undefined,
+        startingRations: this.startingRations,
       });
       await engine.init();
       if (this.pendingQuality) engine.setQuality(this.pendingQuality);
@@ -128,6 +144,11 @@ class GameHost {
     this.engine?.triggerAction(action);
   }
 
+  /** Boss bar data for the HUD, or null when no boss is engaged. */
+  getBossState(): { name: string; ratio: number; phase: number } | null {
+    return this.engine?.getBossState() ?? null;
+  }
+
   getInteractionHint(): InteractionHint | null {
     return this.engine?.getInteractionHint() ?? null;
   }
@@ -159,6 +180,11 @@ class GameHost {
 
   unequipItem(slot: ItemSlotId): boolean {
     return this.engine?.unequipItem(slot) ?? false;
+  }
+
+  /** Dev-only: jump to the boss arena (`?boss=1`). */
+  debugBossArena(): void {
+    this.engine?.debugBossArena();
   }
 
   /** Dev-only: damage the player (used by the death-screen E2E path). */

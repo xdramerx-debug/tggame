@@ -17,7 +17,12 @@
       "staggerTime": 0.3,
       "knockback": 1.4,
       "xp": 12,
-      "rooms": ["combat", "entrance", "boss"]
+      "rooms": [
+        "combat",
+        "entrance",
+        "boss"
+      ],
+      "minFloor": 1
     },
     {
       "id": "revenant",
@@ -36,7 +41,49 @@
       "staggerTime": 0.22,
       "knockback": 1.1,
       "xp": 22,
-      "rooms": ["combat"]
+      "rooms": [
+        "combat"
+      ],
+      "minFloor": 2
+    },
+    {
+      "id": "warden",
+      "label": "Смотритель глубин",
+      "model": "monsterSkeleton",
+      "maxHp": 340,
+      "armor": 14,
+      "damage": 17,
+      "speed": 1.75,
+      "aggroRange": 16,
+      "leashRange": 60,
+      "attackRange": 2.7,
+      "windup": 0.7,
+      "recover": 0.9,
+      "attackCooldown": 0.85,
+      "staggerTime": 0.12,
+      "knockback": 0.5,
+      "xp": 140,
+      "minFloor": 3,
+      "rooms": [
+        "boss"
+      ],
+      "phases": [
+        {
+          "at": 0.66,
+          "speedMul": 1.2,
+          "damageMul": 1.15,
+          "cooldownMul": 0.9,
+          "taunt": "Смотритель пробуждается"
+        },
+        {
+          "at": 0.33,
+          "speedMul": 1.45,
+          "damageMul": 1.35,
+          "cooldownMul": 0.72,
+          "taunt": "Смотритель в ярости"
+        }
+      ],
+      "boss": true
     }
   ],
   "spawn": {
@@ -44,6 +91,6 @@
     "maxActive": 6,
     "activateRange": 13,
     "deactivateRange": 26,
-    "minFloorForRevenant": 2
+    "bossRoomAdds": 1
   }
 }

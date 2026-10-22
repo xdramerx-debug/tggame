@@ -7,6 +7,7 @@ import { hideBackButton } from '@/telegram/buttons';
 import { enterDomFullscreen } from '@/mobile/fullscreen';
 import { lockLandscape } from '@/mobile/orientation';
 import { gameHost } from '@/game/GameHost';
+import { useMetaStore } from '@/store/useMetaStore';
 
 interface MenuButtonProps {
   readonly label: string;
@@ -39,6 +40,7 @@ function MenuButton({ label, hint, onClick, variant = 'ghost' }: MenuButtonProps
 export function MainMenu(): ReactElement {
   const setScreen = useGameStore((state) => state.setScreen);
   const openSheet = useUiStore((state) => state.openSheet);
+  const embers = useMetaStore((state) => state.embers);
 
   useEffect(() => {
     hideBackButton();
@@ -67,13 +69,21 @@ export function MainMenu(): ReactElement {
       </header>
 
       <div className="mx-auto flex w-full max-w-md flex-col gap-3">
-        <MenuButton label="Начать забег" hint="Этап 1 · арена" variant="primary" onClick={startRun} />
+        <MenuButton label="Начать забег" hint="этаж 1" variant="primary" onClick={startRun} />
+        <MenuButton
+          label="Алтарь"
+          hint={`🔥 ${embers}`}
+          onClick={() => {
+            hapticImpact('light');
+            setScreen('meta');
+          }}
+        />
         <MenuButton label="Настройки" hint="качество · управление" onClick={() => openSheet('settings')} />
         <MenuButton label="Титры" hint="ассеты и лицензии" onClick={() => openSheet('credits')} />
       </div>
 
       <footer className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-[#5a6470]">
-        <span>v0.8.0 · stage 8</span>
+        <span>v0.9.0 · stage 9</span>
         <span>landscape only</span>
       </footer>
     </div>

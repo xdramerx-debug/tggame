@@ -1,3 +1,4 @@
+import type { StatBonuses } from '@/game/player/PlayerStats';
 import type { Object3D, Scene, Vector3 } from 'three';
 import type { Collider } from '@dimforge/rapier3d-compat';
 import type { QualityPreset } from './engine';
@@ -36,6 +37,8 @@ export interface DebugSceneSnapshot {
   readonly maxHp?: number;
   /** Player stamina, rounded for the HUD. */
   readonly stamina?: number;
+  /** Stamina ceiling (meta endurance upgrades raise it). */
+  readonly maxStamina?: number;
   /** Enemies killed this run. */
   readonly kills?: number;
   /** Gold carried this run. */
@@ -75,7 +78,8 @@ export interface RunSummaryLike {
   readonly xp: number;
   readonly items: number;
   readonly seconds: number;
-  readonly cause: 'combat' | 'starvation';
+  readonly cause: 'combat' | 'starvation' | 'victory';
+  readonly chestsOpened: number;
 }
 
 /** Camera-relative stick input converted into world space by the engine. */
@@ -111,6 +115,10 @@ export interface GameScene {
   getSummary?(): RunSummaryLike | null;
   /** Dev-only: apply direct damage (survival/death QA). */
   debugHurt?(amount: number): void;
+  /** Dev-only: arena position of the floor's boss (null without one). */
+  debugBossPosition?(): { x: number; z: number } | null;
+  /** Moves the player instantly (QA hooks, floor saves). */
+  teleportTo?(position: { x: number; z: number }): void;
   /** Dev-only: spawn a training dummy in front of the player. */
   debugSpawnDummy?(distance?: number): void;
   /** Dev-only collider wireframes. */
@@ -119,6 +127,10 @@ export interface GameScene {
   setMoveInput(command: MoveCommand): void;
   /** Player action from the touch HUD (attack, dodge, interact, skills). */
   triggerAction(action: InputAction): void;
+  /** Applies meta upgrades bought between runs to the live scene. */
+  setMetaBonuses?(bonuses: StatBonuses, startingRations?: number): void;
+  /** Boss health for the top bar, or null when no boss is engaged. */
+  getBossState?(): { name: string; ratio: number; phase: number } | null;
   /** What the interact button should offer right now, or null when nothing is near. */
   getInteractionHint(): InteractionHint | null;
   /** Camera shake requested by combat this frame (0…1), consumed by the rig. */

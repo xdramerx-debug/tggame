@@ -1,4 +1,4 @@
-import type { TenebrisDatabase } from './db';
+import type { StatRow, TenebrisDatabase } from './db';
 import { db as defaultDb } from './db';
 
 /** Version of the exported JSON envelope; bump on breaking changes. */
@@ -74,6 +74,50 @@ export class MetaRepository {
       await this.database.meta.put({ key, value: JSON.stringify(value), updatedAt: Date.now() });
     } catch (error) {
       console.warn('[db] meta write failed', key, error);
+    }
+  }
+}
+
+/**
+ * Per-run history in the `stats` table.
+ *
+ * Written at the end of a run next to the meta payout: it is the only place that
+ * survives a death, and the statistics screen (later stage) reads it directly.
+ * The id is generated here because IndexedDB's auto-increment keys would collide
+ * with an imported backup.
+ */
+export class StatsRepository {
+  constructor(private readonly database: TenebrisDatabase = defaultDb) {}
+
+  async record(run: {
+    readonly kills: number;
+    readonly items: number;
+    readonly seconds: number;
+    readonly floor: number;
+  }): Promise<void> {
+    try {
+      await this.database.stats.put({
+        id: Date.now(),
+        runId: `run-${Date.now().toString(36)}`,
+        monstersKilled: run.kills,
+        lootCollected: run.items,
+        timeSec: run.seconds,
+        floorReached: run.floor,
+        createdAt: Date.now(),
+      });
+    } catch (error) {
+      console.warn('[db] stats write failed', error);
+    }
+  }
+
+  /** Last `limit` runs, newest first. */
+  async recent(limit = 20): Promise<StatRow[]> {
+    try {
+      const rows = await this.database.stats.orderBy('createdAt').reverse().limit(limit).toArray();
+      return rows;
+    } catch (error) {
+      console.warn('[db] stats read failed', error);
+      return [];
     }
   }
 }

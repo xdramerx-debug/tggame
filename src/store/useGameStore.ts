@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { FrameStats, InitProgress, QualityLevel } from '@/types/engine';
 
-export type ScreenName = 'splash' | 'menu' | 'game';
+export type ScreenName = 'splash' | 'menu' | 'meta' | 'game';
 
 export interface GameState {
   screen: ScreenName;

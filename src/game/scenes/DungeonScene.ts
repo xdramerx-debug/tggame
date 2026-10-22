@@ -50,6 +50,9 @@ import { SURVIVAL_CONFIG, Survival } from '@/game/survival/Survival';
 import type { HungerTier } from '@/game/survival/Survival';
 import type { InventorySnapshot, LootGain } from '@/game/loot/RunState';
 import type { ItemSlotId } from '@/game/loot/itemTable';
+import type { StatBonuses } from '@/game/player/PlayerStats';
+import { addBonuses } from '@/game/meta/MetaState';
+import { NO_BONUSES } from '@/game/player/PlayerStats';
 import { HitEffects } from '@/game/visual/HitEffects';
 import { DamageNumbers } from '@/game/visual/DamageNumbers';
 import { PlayerStats, PLAYER_BASE } from '@/game/player/PlayerStats';
@@ -72,6 +75,11 @@ export interface DungeonSceneOptions {
   readonly onHaptic?: (kind: 'light' | 'medium' | 'heavy') => void;
   /** Called once when the run ends (the HUD replaces the game with a summary). */
   readonly onDeath?: (summary: RunSummary) => void;
+  /** Permanent meta-progression bonuses, applied on top of equipment. */
+  readonly metaBonuses?: StatBonuses;
+  /** Extra rations from meta upgrades, added to the starting count. */
+  readonly startingRations?: number;
+  /** Chests opened on the run so far (paid out as embers at the end). */
 }
 
 /** Everything the death screen shows; plain and serialisable. */
@@ -82,10 +90,15 @@ export interface RunSummary {
   readonly xp: number;
   readonly items: number;
   readonly seconds: number;
-  readonly cause: 'combat' | 'starvation';
+  readonly cause: 'combat' | 'starvation' | 'victory';
+  /** Chests opened before the run ended (drives meta rewards). */
+  readonly chestsOpened: number;
 }
 
 const EXIT_RANGE = 2.4;
+/** The boss bar appears once the player is this close to the arena. */
+const BOSS_BAR_RANGE = 20;
+
 /** Interaction reach for chests, slightly larger than the stairs. */
 const CHEST_RANGE = 2.1;
 const DEFAULT_MAX_FLOORS = 3;
@@ -155,6 +168,10 @@ export class DungeonScene implements GameScene {
   private campfires: { x: number; z: number; used: boolean }[] = [];
   private restCount = 0;
   private lastHungerTier: HungerTier = 'fed';
+  private metaBonuses: StatBonuses = NO_BONUSES;
+  private boss: Enemy | null = null;
+  private bossPhase = 0;
+  private bossKilled = false;
   private chests: Chest[] = [];
   private chestsOpened = 0;
 
@@ -202,6 +219,11 @@ export class DungeonScene implements GameScene {
 
     this.root.add(this.floorsGroup);
     this.floorsGroup.add(this.floorGroup);
+    this.metaBonuses = options.metaBonuses ?? NO_BONUSES;
+    this.run.setStartingRations(SURVIVAL_CONFIG.rations.startCount + (options.startingRations ?? 0));
+    // `reset()` stamps the upgraded ration count into the fresh run.
+    this.run.reset();
+    this.vitals.applyBonuses(this.metaBonuses);
     this.loadFloor(this.dungeon);
     this.placeHeroAtSpawn();
 
@@ -334,6 +356,7 @@ export class DungeonScene implements GameScene {
       hp: Math.round(this.vitals.hp),
       maxHp: this.vitals.maxHp,
       stamina: Math.round(this.vitals.stamina),
+      maxStamina: this.vitals.maxStamina,
       kills: this.kills,
       xp: this.run.xp,
       gold: this.run.gold,
@@ -387,7 +410,16 @@ export class DungeonScene implements GameScene {
     }
 
     this.updateEnemies(step);
-    if (this.vitals.isDead) this.handlePlayerDeath();
+    if (this.vitals.isDead) {
+      this.handlePlayerDeath();
+      return;
+    }
+    // Floor 3's boss is the run's win condition: killing it ends the run in
+    // victory, whatever dealt the last blow (player strike or debug helper).
+    if (this.boss?.isDead && !this.bossKilled) {
+      this.bossKilled = true;
+      this.finishRun('victory');
+    }
   }
 
   update(dt: number, elapsed: number): void {
@@ -444,10 +476,10 @@ export class DungeonScene implements GameScene {
 
   // -------------------------------------------------------------- floors
 
-  /** Descends one floor (wraps to 1 after the last one until stage 9). */
+  /** Descends one floor; the last floor's stairs are sealed by the boss. */
   descend(): void {
-    const maxFloors = this.options.maxFloors ?? DEFAULT_MAX_FLOORS;
-    const nextFloor = this.dungeon.floor >= maxFloors ? 1 : this.dungeon.floor + 1;
+    if (this.isLastFloor) return;
+    const nextFloor = this.dungeon.floor + 1;
     // Derived seed keeps runs reproducible from the run seed + floor index.
     const seed = (this.dungeon.seed + nextFloor * 7919) >>> 0;
 
@@ -493,7 +525,8 @@ export class DungeonScene implements GameScene {
     const distance = Math.hypot(feet.x - this.dungeon.exit.x, feet.z - this.dungeon.exit.z);
     if (distance > EXIT_RANGE) return;
     if (this.isLastFloor) {
-      this.options.onNotify?.('Врата ведут глубже: босс появится на этапе 9');
+      // Floor 3 ends the run when its boss falls, so the stairs stay a hint.
+      this.options.onNotify?.('Врата запечатаны, пока Смотритель жив');
       return;
     }
     this.descend();
@@ -539,9 +572,20 @@ export class DungeonScene implements GameScene {
     return true;
   }
 
-  /** Single place where equipment is folded into `PlayerStats`. */
+  /** Single place where equipment and meta upgrades are folded into the stats. */
   private applyEquipment(): void {
-    this.vitals.applyBonuses(this.run.inventory.totals());
+    this.vitals.applyBonuses(this.combinedBonuses());
+  }
+
+  private combinedBonuses(): StatBonuses {
+    return addBonuses(this.metaBonuses, this.run.inventory.totals());
+  }
+
+  /** Applies freshly bought meta upgrades (called between runs). */
+  setMetaBonuses(bonuses: StatBonuses, startingRations = 0): void {
+    this.metaBonuses = bonuses;
+    this.run.setStartingRations(SURVIVAL_CONFIG.rations.startCount + startingRations);
+    this.applyEquipment();
   }
 
   private placeHeroAtSpawn(): void {
@@ -822,6 +866,15 @@ export class DungeonScene implements GameScene {
     });
     this.root.add(enemy.group);
     this.enemies.push(enemy);
+    if (enemy.isBoss) {
+      this.boss = enemy;
+      enemy.onPhaseChange = ({ index, taunt }) => {
+        this.options.onNotify?.(taunt);
+        this.options.onHaptic?.('heavy');
+        this.shake(0.35);
+        this.bossPhase = index + 1;
+      };
+    }
   }
 
   private resolveEnemyStrike(enemy: Enemy): void {
@@ -831,7 +884,7 @@ export class DungeonScene implements GameScene {
     // Dash i-frames are absolute: dodging through a swing takes no damage.
     if (this.player.isInvulnerable) return;
 
-    const result = this.vitals.takeDamage(enemy.definition.damage);
+    const result = this.vitals.takeDamage(enemy.strikeDamage);
     if (result.applied <= 0) return;
     this.damageNumbers.show({ x: feet.x, y: 1.9, z: feet.z }, Math.round(result.applied));
     this.hitEffects.burst({ x: feet.x, y: 1.1, z: feet.z }, 1.2, 'blood');
@@ -866,10 +919,19 @@ export class DungeonScene implements GameScene {
 
   private handlePlayerDeath(): void {
     if (this.dead) return;
+    this.finishRun(this.survival.isStarving ? 'starvation' : 'combat');
+  }
+
+  /**
+   * Ends the run and hands the summary to the HUD. `cause` doubles as the
+   * reward hint: `victory` is the only outcome that pays the boss bounty.
+   */
+  private finishRun(cause: RunSummary['cause']): void {
+    if (this.dead) return;
     this.dead = true;
-    this.deaths += 1;
+    if (cause !== 'victory') this.deaths += 1;
     this.pendingStrike = -1;
-    this.hero.die();
+    if (cause !== 'victory') this.hero.die();
     this.player.setMoveInput({ x: 0, z: 0, magnitude: 0 });
     this.deathSummary = {
       floor: this.dungeon.floor,
@@ -878,17 +940,30 @@ export class DungeonScene implements GameScene {
       xp: this.run.xp,
       items: this.run.inventory.size,
       seconds: Math.round(this.survival.elapsed),
-      cause: this.survival.isStarving ? 'starvation' : 'combat',
+      cause,
+      chestsOpened: this.chestsOpened,
     };
-    this.shake(0.5);
-    this.options.onHaptic?.('heavy');
-    this.options.onNotify?.(this.deathSummary.cause === 'starvation' ? 'Голод взял своё' : 'Тьма забрала вас');
+    this.shake(cause === 'victory' ? 0.2 : 0.5);
+    this.options.onHaptic?.(cause === 'victory' ? 'medium' : 'heavy');
+    this.options.onNotify?.(
+      cause === 'victory' ? 'Смотритель повержен' : cause === 'starvation' ? 'Голод взял своё' : 'Тьма забрала вас',
+    );
     this.options.onDeath?.(this.deathSummary);
   }
 
   /** True once the run has ended; the scene freezes until `restartRun()`. */
   get isDead(): boolean {
     return this.dead;
+  }
+
+  /** Engaged boss health for the top bar (null when far away or dead). */
+  getBossState(): { name: string; ratio: number; phase: number } | null {
+    const boss = this.boss;
+    if (!boss || boss.isDead) return null;
+    const feet = this.player.feet;
+    const distance = Math.hypot(boss.position.x - feet.x, boss.position.z - feet.z);
+    if (distance > BOSS_BAR_RANGE) return null;
+    return { name: boss.name, ratio: boss.hpRatio, phase: this.bossPhase };
   }
 
   getSummary(): RunSummary | null {
@@ -909,13 +984,14 @@ export class DungeonScene implements GameScene {
     this.kills = 0;
     this.deaths = 0;
     this.chestsOpened = 0;
+    this.bossKilled = false;
     this.restCount = 0;
     this.pendingStrike = -1;
     // Reset the run first, then re-derive everything from it: gear drives the
     // stat block, and a fresh run starts with an empty bag.
     this.run.reset();
     this.vitals.reset();
-    this.vitals.applyBonuses(this.run.inventory.totals());
+    this.vitals.applyBonuses(this.combinedBonuses());
     this.survival.reset();
     this.lastHungerTier = this.survival.tier;
     this.hero.revive();
@@ -1008,6 +1084,20 @@ export class DungeonScene implements GameScene {
     this.survival.burn(amount);
   }
 
+  /** Dev/test helper: kills the boss instantly (victory path). */
+  debugKillBoss(): boolean {
+    const boss = this.boss;
+    if (!boss || boss.isDead) return false;
+    boss.takeDamage(100_000, this.player.feet, false);
+    return true;
+  }
+
+  /** Dev/test helper: arena centre of the boss, or null on a bossless floor. */
+  debugBossPosition(): { x: number; z: number } | null {
+    const planned = this.director?.planned.find((spawn) => spawn.boss === true);
+    return planned ? { x: planned.x, z: planned.z } : null;
+  }
+
   /** Dev/test helper: world positions of this floor's chests. */
   debugChestPositions(): { x: number; z: number }[] {
     return this.chests.map((chest) => ({ x: chest.position.x, z: chest.position.z }));
@@ -1034,6 +1124,15 @@ export class DungeonScene implements GameScene {
     });
     this.root.add(enemy.group);
     this.enemies.push(enemy);
+    if (enemy.isBoss) {
+      this.boss = enemy;
+      enemy.onPhaseChange = ({ index, taunt }) => {
+        this.options.onNotify?.(taunt);
+        this.options.onHaptic?.('heavy');
+        this.shake(0.35);
+        this.bossPhase = index + 1;
+      };
+    }
   }
 
   /** Dev/test helper: wipes the current wave (also used by respawn). */
@@ -1042,6 +1141,8 @@ export class DungeonScene implements GameScene {
   }
 
   private clearEnemies(): void {
+    this.boss = null;
+    this.bossPhase = 0;
     for (const enemy of this.enemies) enemy.dispose();
     this.enemies = [];
   }

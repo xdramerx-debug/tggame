@@ -5,7 +5,10 @@ import { hapticImpact } from '@/telegram/haptic';
 
 interface DeathScreenProps {
   readonly summary: RunSummary;
+  /** Embers granted by this run (paid out by the meta store). */
+  readonly reward: number;
   readonly onRestart: () => void;
+  readonly onAltar: () => void;
   readonly onMenu: () => void;
 }
 
@@ -33,21 +36,32 @@ function formatDuration(seconds: number): string {
  * 200 ms (spec: no transition longer than 300 ms) and the buttons are 56 px
  * tall touch targets; both actions live in one row so a thumb can reach them.
  */
-export function DeathScreen({ summary, onRestart, onMenu }: DeathScreenProps): ReactElement {
+export function DeathScreen({ summary, reward, onRestart, onAltar, onMenu }: DeathScreenProps): ReactElement {
   const starved = summary.cause === 'starvation';
+  const won = summary.cause === 'victory';
   return (
     <motion.div
       className="safe-pad absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 px-6"
-      style={{ background: 'radial-gradient(ellipse at center, rgba(20,6,8,0.82) 0%, rgba(4,5,8,0.96) 70%)' }}
+      style={{
+        background: won
+          ? 'radial-gradient(ellipse at center, rgba(26,18,6,0.82) 0%, rgba(6,6,8,0.96) 70%)'
+          : 'radial-gradient(ellipse at center, rgba(20,6,8,0.82) 0%, rgba(4,5,8,0.96) 70%)',
+      }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2 }}
       data-testid="death-screen"
     >
       <div className="text-center">
-        <h1 className="font-display text-3xl tracking-[0.16em] text-[#c8342e]">ВЫ ПОГИБЛИ</h1>
+        {won ? (
+          <h1 className="font-display text-3xl tracking-[0.16em] text-gold" data-testid="victory-title">
+            СМОТРИТЕЛЬ ПОВЕРЖЕН
+          </h1>
+        ) : (
+          <h1 className="font-display text-3xl tracking-[0.16em] text-[#c8342e]">ВЫ ПОГИБЛИ</h1>
+        )}
         <p className="mt-1 text-[13px] text-[#9aa3ae]">
-          {starved ? 'Голод оказался сильнее тьмы' : 'Подземелье забрало ещё одного'}
+          {won ? 'Подземелье замолчало. Пока что.' : starved ? 'Голод оказался сильнее тьмы' : 'Подземелье забрало ещё одного'}
         </p>
       </div>
 
@@ -58,6 +72,12 @@ export function DeathScreen({ summary, onRestart, onMenu }: DeathScreenProps): R
         <Stat label="Золото" value={String(summary.gold)} />
         <Stat label="Опыт" value={String(summary.xp)} />
         <Stat label="Предметы" value={String(summary.items)} />
+      </div>
+
+      <div className="hud-panel flex min-h-[48px] items-center gap-2 border-gold/60 px-4" data-testid="death-reward" data-embers={reward}>
+        <span aria-hidden="true">🔥</span>
+        <span className="hud-outline text-base font-semibold text-gold">+{reward}</span>
+        <span className="text-[11px] uppercase tracking-widest text-[#9aa3ae]">углей в алтарь</span>
       </div>
 
       <div className="flex w-full max-w-md gap-3">
@@ -75,14 +95,21 @@ export function DeathScreen({ summary, onRestart, onMenu }: DeathScreenProps): R
           type="button"
           className="hud-panel flex min-h-[56px] flex-1 items-center justify-center text-base text-[#e8e3d6] active:scale-[0.97]"
           onPointerDown={() => hapticImpact('light')}
+          onClick={onAltar}
+          data-testid="death-altar"
+        >
+          Алтарь
+        </button>
+        <button
+          type="button"
+          className="hud-panel flex min-h-[56px] flex-1 items-center justify-center text-base text-[#e8e3d6] active:scale-[0.97]"
+          onPointerDown={() => hapticImpact('light')}
           onClick={onMenu}
           data-testid="death-menu"
         >
           В меню
         </button>
       </div>
-
-      <p className="text-center text-[11px] text-[#5a6470]">Мета-прогрессия и алтари появятся на этапе 9</p>
     </motion.div>
   );
 }
