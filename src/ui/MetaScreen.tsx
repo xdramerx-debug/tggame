@@ -85,8 +85,12 @@ function UpgradeRow({
  */
 export function MetaScreen({ onBack }: { readonly onBack: () => void }): ReactElement {
   const embers = useMetaStore((state) => state.embers);
-  const upgrades = useMetaStore((state) => state.upgrades);
   const loaded = useMetaStore((state) => state.loaded);
+  // Rows are derived from the live store on every render; the `embers`/`loaded`
+  // subscriptions are the invalidation signal. Reading the snapshot directly
+  // keeps the altar in sync even if a store notification is coalesced away
+  // during the screen transition.
+  const upgrades = useMetaStore.getState().upgrades;
   const hydrate = useMetaStore((state) => state.hydrate);
   const purchase = useMetaStore((state) => state.purchase);
   const [hint, setHint] = useState<string | null>(null);

@@ -95,7 +95,8 @@ test.describe('boss and meta progression', () => {
     expect(meta?.levels['vitality'] ?? 0, `store did not level up (${diagnostics})`).toBe(1);
     expect(dom.store, `duplicate store module (${diagnostics})`).toBe(meta?.storeId);
     // ...and the altar must render it.
-    await expect(page.getByTestId('upgrade-level-vitality'), diagnostics).toHaveText('1/5');
+    const rendered = await page.getByTestId('upgrade-level-vitality').innerText();
+    expect(rendered, diagnostics).toBe('1/5');
     // The price is actually deducted, not just the level bumped.
     expect(Number((await page.getByTestId('meta-embers').innerText()).replace(/\D/g, ''))).toBeLessThan(
       Number(before.replace(/\D/g, '')),
