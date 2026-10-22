@@ -16,7 +16,6 @@ export class MetaStorage {
   private state = new MetaState();
   private loaded = false;
   private dirty = false;
-  private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   get value(): MetaState {
     return this.state;
@@ -33,20 +32,19 @@ export class MetaStorage {
     return this.state;
   }
 
-  /** Applies a mutation and schedules a debounced write (runs end on taps). */
+  /**
+   * Applies a mutation and writes it immediately.
+   *
+   * A purchase is one tap on a static screen, so there is nothing to coalesce —
+   * and a debounce timer would lose the write if the WebView is closed (or the
+   * page reloaded) within that window, which is exactly what happens when a
+   * player buys an upgrade and immediately backs out.
+   */
   update(mutator: (state: MetaState) => void): MetaState {
     mutator(this.state);
     this.dirty = true;
-    this.scheduleSave();
+    void this.save();
     return this.state;
-  }
-
-  private scheduleSave(): void {
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      this.saveTimer = null;
-      void this.save();
-    }, 250);
   }
 
   async save(): Promise<void> {

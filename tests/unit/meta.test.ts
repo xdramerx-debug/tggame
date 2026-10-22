@@ -125,20 +125,25 @@ describe('addBonuses', () => {
   });
 });
 
-describe('meta storage debounce', () => {
-  it('coalesces rapid updates into one write', async () => {
-    vi.useFakeTimers();
+describe('meta storage writes', () => {
+  it('writes on every mutation, without waiting for a timer', async () => {
     const { MetaStorage } = await import('@/game/meta/metaStorage');
     const storage = new MetaStorage();
     const save = vi.spyOn(storage, 'save').mockResolvedValue(undefined);
     storage.update((meta) => meta.addEmbers(3));
     storage.update((meta) => meta.addEmbers(4));
-    // `update` returns the live state, so both mutations are already visible.
+    // A purchase must survive an immediate page close: no debounce window.
+    expect(save).toHaveBeenCalledTimes(2);
     expect(storage.value.embers).toBe(7);
-    expect(save).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(300);
-    expect(save).toHaveBeenCalledTimes(1);
-    expect(storage.value.embers).toBe(7);
-    vi.useRealTimers();
+  });
+
+  it('does not let a late read roll back a purchase made meanwhile', async () => {
+    const { MetaStorage } = await import('@/game/meta/metaStorage');
+    const storage = new MetaStorage();
+    vi.spyOn(storage, 'save').mockResolvedValue(undefined);
+    const pending = storage.load();
+    storage.update((meta) => meta.addEmbers(50));
+    await pending;
+    expect(storage.value.embers).toBe(50);
   });
 });
