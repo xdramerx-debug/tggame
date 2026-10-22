@@ -73,10 +73,22 @@ test.describe('boss and meta progression', () => {
     // Diagnostics first: a swallowed tap and a refused purchase look identical
     // from the outside, and the difference matters.
     const meta = await readMeta(page);
-    const diagnostics = `${JSON.stringify(meta)} | logs: ${logs.join(' | ')}`;
+    const dom = await page.evaluate(() => {
+      const nodes = Array.from(document.querySelectorAll('[data-testid="upgrade-level-vitality"]'));
+      return {
+        count: nodes.length,
+        texts: nodes.map((node) => node.textContent),
+        hint: document.querySelector('[data-testid="meta-hint"]')?.textContent ?? null,
+        embers: document.querySelector('[data-testid="meta-embers"]')?.textContent ?? null,
+      };
+    });
+    const diagnostics = `${JSON.stringify(meta)} | dom: ${JSON.stringify(dom)} | logs: ${logs.join(' | ')}`;
     expect(meta?.attempts ?? 0, `purchase was never called (${diagnostics})`).toBeGreaterThan(0);
     expect(meta?.purchases ?? 0, `purchase refused (${diagnostics})`).toBeGreaterThan(0);
-    await expect(page.getByTestId('upgrade-level-vitality')).toHaveText('1/5');
+    // The store is the source of truth for the economy...
+    expect(meta?.levels['vitality'] ?? 0, `store did not level up (${diagnostics})`).toBe(1);
+    // ...and the altar must render it.
+    await expect(page.getByTestId('upgrade-level-vitality'), diagnostics).toHaveText('1/5');
     // The price is actually deducted, not just the level bumped.
     expect(Number((await page.getByTestId('meta-embers').innerText()).replace(/\D/g, ''))).toBeLessThan(
       Number(before.replace(/\D/g, '')),
