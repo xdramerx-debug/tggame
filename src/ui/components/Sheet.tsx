@@ -62,6 +62,7 @@ export function Sheet({ open, title, onClose, children }: SheetProps): ReactElem
                 onPointerDown={() => hapticSelection()}
                 onClick={onClose}
                 aria-label="Закрыть"
+                data-testid="sheet-close"
               >
                 ✕
               </button>
