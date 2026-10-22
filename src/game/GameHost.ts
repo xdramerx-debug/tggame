@@ -2,6 +2,7 @@ import type { FrameStats, InitProgress, QualityLevel } from '@/types/engine';
 import type { InputAction, InteractionHint, MoveInput } from '@/input/types';
 import type { DebugSnapshot } from '@/game/debug';
 import type { InventorySnapshot } from '@/game/loot/RunState';
+import type { RunSummary } from '@/game/scenes/DungeonScene';
 import type { ItemSlotId } from '@/game/loot/itemTable';
 import { Engine } from './core/Engine';
 import { hapticSelection } from '@/telegram/haptic';
@@ -25,10 +26,23 @@ class GameHost {
   private canvas: HTMLCanvasElement | null = null;
   private bootPromise: Promise<Engine> | null = null;
   private callbacks: GameHostCallbacks = {};
+  private deathListener: ((summary: RunSummary) => void) | null = null;
   private pendingQuality: QualityLevel | null = null;
 
   setCallbacks(callbacks: GameHostCallbacks): void {
     this.callbacks = callbacks;
+  }
+
+  /**
+   * Registers the end-of-run listener. Separate from `setCallbacks` because the
+   * canvas owns those and requests a new object on every quality change.
+   * @returns an unsubscribe function
+   */
+  setDeathListener(listener: (summary: RunSummary) => void): () => void {
+    this.deathListener = listener;
+    return () => {
+      if (this.deathListener === listener) this.deathListener = null;
+    };
   }
 
   /** Called by the canvas element's ref callback; keeps the host in sync. */
@@ -65,6 +79,9 @@ class GameHost {
           hapticSelection();
         },
         onMessage: (message) => this.callbacks.onMessage?.(message),
+        // The loop keeps running so the hero's death clip can play behind the
+        // summary; gameplay is frozen inside the scene itself.
+        onDeath: (summary) => this.deathListener?.(summary),
       });
       await engine.init();
       if (this.pendingQuality) engine.setQuality(this.pendingQuality);
@@ -115,6 +132,22 @@ class GameHost {
     return this.engine?.getInteractionHint() ?? null;
   }
 
+  /** Starts a fresh run and resumes the loop. */
+  restartRun(seed?: number): void {
+    this.engine?.restartRun(seed);
+    this.engine?.start();
+  }
+
+  /** Eats one ration from the run's food supply. */
+  eatRation(): void {
+    this.engine?.eatRation();
+  }
+
+  /** Last run summary (null while alive). */
+  getRunSummary(): RunSummary | null {
+    return this.engine?.getRunSummary() ?? null;
+  }
+
   /** Inventory data for the HUD panel. */
   getInventorySnapshot(): InventorySnapshot | null {
     return this.engine?.getInventorySnapshot() ?? null;
@@ -126,6 +159,11 @@ class GameHost {
 
   unequipItem(slot: ItemSlotId): boolean {
     return this.engine?.unequipItem(slot) ?? false;
+  }
+
+  /** Dev-only: damage the player (used by the death-screen E2E path). */
+  debugHurt(amount: number): void {
+    this.engine?.debugHurt(amount);
   }
 
   /** Dev-only: spawn one training skeleton in front of the player. */

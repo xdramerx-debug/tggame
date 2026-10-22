@@ -152,6 +152,21 @@ export class CharacterModel {
     this.current = 'death';
   }
 
+  /**
+   * Clears the death state and returns to idle (new run after a death).
+   *
+   * The mixer is reset rather than crossfaded: the death clip is clamped on its
+   * last frame, and blending out of a corpse reads as a resurrection bug.
+   */
+  revive(): void {
+    if (!this.dead) return;
+    this.dead = false;
+    this.oneShot = null;
+    this.mixer.stopAllAction();
+    this.current = 'idle';
+    this.playState('idle', true);
+  }
+
   /** Distance from feet to the model's eye level (camera focus height). */
   get eye(): number {
     return this.eyeHeight;

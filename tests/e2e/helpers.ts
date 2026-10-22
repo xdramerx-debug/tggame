@@ -17,6 +17,8 @@ export type QualityParam = 'low' | 'medium' | 'high';
 export interface BootOptions {
   readonly seed?: number;
   readonly quality?: QualityParam;
+  /** Extra query params (e.g. `kill=1` for the death-screen path). */
+  readonly query?: string;
 }
 
 export interface DebugState {
@@ -36,7 +38,8 @@ export async function bootIntoRun(page: Page, options: BootOptions = {}): Promis
   const params = new URLSearchParams();
   params.set('quality', options.quality ?? 'low');
   if (options.seed !== undefined) params.set('seed', String(options.seed));
-  await page.goto(`/?${params.toString()}`);
+  const extra = options.query ? `&${options.query}` : '';
+  await page.goto(`/?${params.toString()}${extra}`);
   await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 20_000 });
   await page.getByTestId('menu-Начать забег').click();
   await expect(page.getByTestId('game-canvas')).toBeVisible();

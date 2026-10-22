@@ -1,5 +1,6 @@
 import { LOOT_CONFIG, RARITIES, itemsForFloor } from './itemTable';
 import type { LootConfig, RarityId } from './itemTable';
+import { SURVIVAL_CONFIG } from '@/game/survival/Survival';
 
 /** Random source in [0,1); injected so loot stays deterministic in tests. */
 export type Roll = () => number;
@@ -8,6 +9,8 @@ export type Roll = () => number;
 export interface LootRoll {
   readonly gold: number;
   readonly items: readonly { readonly defId: string; readonly rarity: RarityId }[];
+  /** Food rations: the survival clock is why gold alone is not a reward. */
+  readonly rations: number;
 }
 
 /** Weighted rarity roll; returns the rarity id and never throws on bad data. */
@@ -36,6 +39,12 @@ export function rollItem(floor: number, roll: Roll): { defId: string; rarity: Ra
   return { defId: definition.id, rarity: rollRarity(roll) };
 }
 
+/** Chests always carry food: they are the reliable way to keep the clock up. */
+function rollRations(roll: Roll): number {
+  const { chestMin, chestMax } = SURVIVAL_CONFIG.rations;
+  return Math.min(chestMax, chestMin + Math.floor(roll() * (chestMax - chestMin + 1)));
+}
+
 function rollGold(range: LootConfig['monsterGold'], floor: number, roll: Roll): number {
   const min = range.min + range.perFloor * Math.max(0, floor - 1);
   const max = range.max + range.perFloor * Math.max(0, floor - 1);
@@ -46,9 +55,10 @@ function rollGold(range: LootConfig['monsterGold'], floor: number, roll: Roll): 
 /** Gold and (rarely) an item from a killed monster. */
 export function rollMonsterDrop(floor: number, roll: Roll): LootRoll {
   const gold = rollGold(LOOT_CONFIG.monsterGold, floor, roll);
-  if (roll() >= LOOT_CONFIG.monsterItemChance) return { gold, items: [] };
+  const rations = roll() < SURVIVAL_CONFIG.rations.monsterChance ? 1 : 0;
+  if (roll() >= LOOT_CONFIG.monsterItemChance) return { gold, items: [], rations };
   const item = rollItem(floor, roll);
-  return { gold, items: item ? [item] : [] };
+  return { gold, items: item ? [item] : [], rations };
 }
 
 /** A chest always pays gold and one or two items. */
@@ -61,5 +71,5 @@ export function rollChestLoot(floor: number, roll: Roll): LootRoll {
     const item = rollItem(floor, roll);
     if (item) items.push(item);
   }
-  return { gold, items };
+  return { gold, items, rations: rollRations(roll) };
 }

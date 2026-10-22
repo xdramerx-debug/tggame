@@ -12,6 +12,10 @@ export interface Vitals {
   readonly enemies: number;
   readonly gold: number;
   readonly items: number;
+  readonly satiety: number;
+  readonly hunger: 'fed' | 'hungry' | 'starving';
+  readonly rations: number;
+  readonly dead: boolean;
 }
 
 const INITIAL: Vitals = {
@@ -24,6 +28,10 @@ const INITIAL: Vitals = {
   enemies: 0,
   gold: 0,
   items: 0,
+  satiety: 80,
+  hunger: 'fed',
+  rations: 1,
+  dead: false,
 };
 
 /**
@@ -52,6 +60,10 @@ export function useVitals(): Vitals {
         enemies: scene.enemies ?? 0,
         gold: scene.gold ?? 0,
         items: scene.items ?? 0,
+        satiety: Math.round(scene.satiety ?? INITIAL.satiety),
+        hunger: scene.hunger ?? 'fed',
+        rations: scene.rations ?? 0,
+        dead: scene.dead ?? false,
       };
       setVitals((previous) => (sameVitals(previous, next) ? previous : next));
     };
@@ -74,7 +86,11 @@ function sameVitals(a: Vitals, b: Vitals): boolean {
     a.floor === b.floor &&
     a.enemies === b.enemies &&
     a.gold === b.gold &&
-    a.items === b.items
+    a.items === b.items &&
+    a.satiety === b.satiety &&
+    a.hunger === b.hunger &&
+    a.rations === b.rations &&
+    a.dead === b.dead
   );
 }
 

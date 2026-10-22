@@ -14,6 +14,7 @@ import { DungeonScene } from '@/game/scenes/DungeonScene';
 import { PhysicsWorld } from '@/game/physics';
 import { AssetLoader } from '@/game/assets/AssetLoader';
 import type { InventorySnapshot } from '@/game/loot/RunState';
+import type { RunSummary } from '@/game/scenes/DungeonScene';
 import type { ItemSlotId } from '@/game/loot/itemTable';
 import { hapticImpact } from '@/telegram/haptic';
 
@@ -25,6 +26,8 @@ export interface EngineOptions {
   readonly onQualityChange?: (level: QualityLevel) => void;
   /** HUD toast from the scene (floor change, blocked stairs). */
   readonly onMessage?: (message: string) => void;
+  /** End-of-run summary; the HUD swaps the game for the death screen. */
+  readonly onDeath?: (summary: RunSummary) => void;
   /** Overrides the run seed; otherwise `?seed=` or a random one is used. */
   readonly seed?: number;
 }
@@ -166,6 +169,7 @@ export class Engine {
       assets,
       onNotify: (message) => this.options.onMessage?.(message),
       onHaptic: (kind) => hapticImpact(kind),
+      onDeath: (summary) => this.options.onDeath?.(summary),
     });
     this.physicsWorld.primeQueries();
     this.gameScene = scene;
@@ -266,6 +270,29 @@ export class Engine {
   /** Executed fixed physics steps (diagnostics / E2E). */
   getPhysicsStepCount(): number {
     return this.physicsWorld?.stepCount ?? 0;
+  }
+
+  /** Starts a fresh run in the same engine and WebGL context. */
+  restartRun(seed?: number): void {
+    this.gameScene?.restartRun?.(seed);
+    this.perf.reset();
+    this.physicsWorld?.resetAccumulator();
+    this.loop.resume();
+  }
+
+  /** Eats one ration (HUD button); the scene owns the actual effect. */
+  eatRation(): void {
+    this.gameScene?.eatRation?.();
+  }
+
+  /** End-of-run summary, or null while the player is alive. */
+  getRunSummary(): RunSummary | null {
+    return this.gameScene?.getSummary?.() ?? null;
+  }
+
+  /** Dev-only: hurt the player (`?kill=1` for the death-screen smoke test). */
+  debugHurt(amount: number): void {
+    this.gameScene?.debugHurt?.(amount);
   }
 
   /** Dev-only: put a training skeleton in front of the player (`?dummy=1`). */

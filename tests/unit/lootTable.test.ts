@@ -94,6 +94,18 @@ describe('chest loot', () => {
     }
   });
 
+  it('always puts food in a chest and sometimes on a monster', () => {
+    const chest = rollChestLoot(1, constant(0));
+    expect(chest.rations).toBeGreaterThanOrEqual(1);
+
+    // Roll 0 → ration granted; the gold roll comes first, so the second call is
+    // the food gate. A roll above the chance yields none.
+    const lucky = rollMonsterDrop(1, sequence(0.5, 0, 0.99));
+    expect(lucky.rations).toBe(1);
+    const unlucky = rollMonsterDrop(1, sequence(0.5, 0.99, 0.99));
+    expect(unlucky.rations).toBe(0);
+  });
+
   it('pays more than a single monster', () => {
     const chest = rollChestLoot(1, constant(0));
     const monster = rollMonsterDrop(1, constant(0));

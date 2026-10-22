@@ -57,6 +57,8 @@ export class PlayerStats {
   private staminaLockout = 0;
   private bonusesValue: StatBonuses = NO_BONUSES;
   private attackProfile: AttackProfile;
+  private regenScale = 1;
+  private damageScale = 1;
 
   constructor() {
     this.health = new Health(PLAYER_BASE.maxHp, PLAYER_BASE.armor);
@@ -98,7 +100,34 @@ export class PlayerStats {
 
   /** Current attack profile (base + equipment). */
   get attack(): AttackProfile {
-    return this.attackProfile;
+    return {
+      ...this.attackProfile,
+      damage: this.attackProfile.damage * this.damageScale,
+    };
+  }
+
+  get regenMultiplier(): number {
+    return this.regenScale;
+  }
+
+  get damageMultiplier(): number {
+    return this.damageScale;
+  }
+
+  /** Survival state scales stamina regeneration (hunger tiers). */
+  setRegenMultiplier(multiplier: number): void {
+    this.regenScale = Math.max(0, multiplier);
+  }
+
+  /** Survival state scales outgoing damage (hunger tiers). */
+  setDamageMultiplier(multiplier: number): void {
+    this.damageScale = Math.max(0, multiplier);
+  }
+
+  /** Instant stamina refill (campfire rest); spends the lockout too. */
+  restoreStamina(amount: number): void {
+    this.staminaValue = Math.min(this.maxStamina, this.staminaValue + Math.max(0, amount));
+    this.staminaLockout = 0;
   }
 
   get bonuses(): StatBonuses {
@@ -145,6 +174,13 @@ export class PlayerStats {
     return rollDamage(this.attack, roll);
   }
 
+  /** Full restore for a new run (hunger and gear stay as they are). */
+  revive(): void {
+    this.health.reset();
+    this.staminaValue = this.maxStamina;
+    this.staminaLockout = 0;
+  }
+
   /** Applies incoming damage with the post-hit i-frame window. */
   takeDamage(raw: number, critical = false): DamageResult {
     const result = this.health.damage(raw, critical);
@@ -162,7 +198,10 @@ export class PlayerStats {
     this.staminaLockout = Math.max(0, this.staminaLockout - dt);
     if (this.staminaValue > this.maxStamina) this.staminaValue = this.maxStamina;
     if (this.staminaLockout === 0 && this.staminaValue < this.maxStamina) {
-      this.staminaValue = Math.min(this.maxStamina, this.staminaValue + PLAYER_BASE.staminaRegen * dt);
+      this.staminaValue = Math.min(
+        this.maxStamina,
+        this.staminaValue + PLAYER_BASE.staminaRegen * this.regenScale * dt,
+      );
     }
   }
 

@@ -21,7 +21,7 @@ describe('RunState', () => {
 
   it('grants a loot roll into gold and the bag', () => {
     const run = new RunState();
-    const gain = run.grant({ gold: 12, items: [{ defId: 'ironSword', rarity: 'rare' }] });
+    const gain = run.grant({ gold: 12, items: [{ defId: 'ironSword', rarity: 'rare' }], rations: 0 });
     expect(gain.gold).toBe(12);
     expect(gain.items).toHaveLength(1);
     expect(gain.items[0]?.label).toBe('Железный меч');
@@ -37,15 +37,15 @@ describe('RunState', () => {
       defId: 'rustedBlade',
       rarity: 'common' as const,
     }));
-    const gain = run.grant({ gold: 0, items });
+    const gain = run.grant({ gold: 0, items, rations: 0 });
     expect(gain.items).toHaveLength(INVENTORY_CAPACITY);
     expect(gain.dropped).toBe(2);
   });
 
   it('ignores empty rolls and unknown item ids', () => {
     const run = new RunState();
-    expect(run.grant({ gold: 0, items: [] })).toEqual({ gold: 0, items: [], dropped: 0 });
-    const gain = run.grant({ gold: 3, items: [{ defId: 'missing', rarity: 'common' }] });
+    expect(run.grant({ gold: 0, items: [], rations: 0 })).toEqual({ gold: 0, items: [], dropped: 0, rations: 0 });
+    const gain = run.grant({ gold: 3, items: [{ defId: 'missing', rarity: 'common' }], rations: 0 });
     expect(gain.gold).toBe(3);
     expect(gain.dropped).toBe(1);
     expect(run.gold).toBe(3);
@@ -70,7 +70,7 @@ describe('RunState', () => {
 
   it('exposes equipped items with their bonuses in totals', () => {
     const run = new RunState();
-    run.grant({ gold: 0, items: [{ defId: 'ironSword', rarity: 'common' }] });
+    run.grant({ gold: 0, items: [{ defId: 'ironSword', rarity: 'common' }], rations: 0 });
     const item = run.inventory.bag[0];
     expect(item).toBeDefined();
     if (!item) return;
@@ -91,14 +91,37 @@ describe('RunState', () => {
     expect(rollChestLoot(2, Math.random).items.length).toBeGreaterThan(0);
   });
 
+  it('carries food rations separately from items', () => {
+    const run = new RunState();
+    expect(run.rations).toBe(1);
+    run.addRations(2);
+    expect(run.rations).toBe(3);
+    expect(run.consumeRation()).toBe(true);
+    expect(run.rations).toBe(2);
+    expect(run.snapshot().rations).toBe(2);
+
+    run.addRations(-99);
+    expect(run.rations).toBe(0);
+    expect(run.consumeRation()).toBe(false);
+  });
+
+  it('grants rations from a chest roll', () => {
+    const run = new RunState();
+    const gain = run.lootChest(1, Math.random);
+    expect(gain.rations).toBeGreaterThanOrEqual(1);
+    expect(run.rations).toBe(1 + gain.rations);
+  });
+
   it('resets a run for a fresh start', () => {
     const run = new RunState();
     run.addGold(50);
     run.addXp(20);
-    run.grant({ gold: 0, items: [{ defId: 'ironSword', rarity: 'common' }] });
+    run.grant({ gold: 0, items: [{ defId: 'ironSword', rarity: 'common' }], rations: 0 });
     run.reset();
     expect(run.gold).toBe(0);
     expect(run.xp).toBe(0);
     expect(run.inventory.size).toBe(0);
+    // Food is restored to the starting ration.
+    expect(run.rations).toBe(1);
   });
 });

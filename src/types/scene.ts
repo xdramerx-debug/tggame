@@ -44,6 +44,17 @@ export interface DebugSceneSnapshot {
   readonly items?: number;
   /** Definition id of the equipped weapon, or null. */
   readonly weapon?: string | null;
+  /** Satiety (0…100) and its tier, for the HUD hunger bar. */
+  readonly satiety?: number;
+  readonly hunger?: 'fed' | 'hungry' | 'starving';
+  /** Food rations left in the run. */
+  readonly rations?: number;
+  /** Campfire rests used on this floor. */
+  readonly restCount?: number;
+  /** True once the run has ended; the death screen reads the summary. */
+  readonly dead?: boolean;
+  /** Run time in whole seconds (death summary, difficulty gates). */
+  readonly runSeconds?: number;
   /** Chests generated on the current floor. */
   readonly chests?: number;
   /** Chests opened on the current floor. */
@@ -54,6 +65,17 @@ export interface DebugSceneSnapshot {
   readonly deaths?: number;
   /** Living enemies currently instantiated around the player. */
   readonly enemies?: number;
+}
+
+/** Shape of the end-of-run summary the HUD renders (see `DungeonScene`). */
+export interface RunSummaryLike {
+  readonly floor: number;
+  readonly kills: number;
+  readonly gold: number;
+  readonly xp: number;
+  readonly items: number;
+  readonly seconds: number;
+  readonly cause: 'combat' | 'starvation';
 }
 
 /** Camera-relative stick input converted into world space by the engine. */
@@ -81,6 +103,14 @@ export interface GameScene {
   fixedUpdate?(stepSeconds: number): void;
   /** Collider excluded from the camera boom raycast (the player capsule). */
   getPlayerCollider?(): Collider | null;
+  /** Starts a fresh run on the same scene instance. */
+  restartRun?(seed?: number): void;
+  /** Consumes one food ration. */
+  eatRation?(): void;
+  /** End-of-run summary, or null while alive. */
+  getSummary?(): RunSummaryLike | null;
+  /** Dev-only: apply direct damage (survival/death QA). */
+  debugHurt?(amount: number): void;
   /** Dev-only: spawn a training dummy in front of the player. */
   debugSpawnDummy?(distance?: number): void;
   /** Dev-only collider wireframes. */

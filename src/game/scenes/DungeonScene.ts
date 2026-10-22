@@ -46,6 +46,8 @@ import type { PlannedSpawn } from '@/game/world/EnemyDirector';
 import { monsterById } from '@/game/combat/monsterTable';
 import { Chest } from '@/game/entities/Chest';
 import { RunState } from '@/game/loot/RunState';
+import { SURVIVAL_CONFIG, Survival } from '@/game/survival/Survival';
+import type { HungerTier } from '@/game/survival/Survival';
 import type { InventorySnapshot, LootGain } from '@/game/loot/RunState';
 import type { ItemSlotId } from '@/game/loot/itemTable';
 import { HitEffects } from '@/game/visual/HitEffects';
@@ -68,6 +70,19 @@ export interface DungeonSceneOptions {
   readonly assets?: AssetLoader | null;
   /** Haptics hook; the engine maps it to Telegram HapticFeedback. */
   readonly onHaptic?: (kind: 'light' | 'medium' | 'heavy') => void;
+  /** Called once when the run ends (the HUD replaces the game with a summary). */
+  readonly onDeath?: (summary: RunSummary) => void;
+}
+
+/** Everything the death screen shows; plain and serialisable. */
+export interface RunSummary {
+  readonly floor: number;
+  readonly kills: number;
+  readonly gold: number;
+  readonly xp: number;
+  readonly items: number;
+  readonly seconds: number;
+  readonly cause: 'combat' | 'starvation';
 }
 
 const EXIT_RANGE = 2.4;
@@ -133,6 +148,13 @@ export class DungeonScene implements GameScene {
 
   /** Run economy: gold, XP and the inventory (stage 7). */
   readonly run = new RunState();
+  /** Hunger clock and its gameplay modifiers (stage 8). */
+  readonly survival = new Survival();
+  private dead = false;
+  private deathSummary: RunSummary | null = null;
+  private campfires: { x: number; z: number; used: boolean }[] = [];
+  private restCount = 0;
+  private lastHungerTier: HungerTier = 'fed';
   private chests: Chest[] = [];
   private chestsOpened = 0;
 
@@ -217,10 +239,12 @@ export class DungeonScene implements GameScene {
   }
 
   setMoveInput(command: MoveCommand): void {
-    this.player.setMoveInput(command);
+    // A dead player keeps their final pose: no sliding, no input leaks.
+    this.player.setMoveInput(this.dead ? { x: 0, z: 0, magnitude: 0 } : command);
   }
 
   triggerAction(action: InputAction): void {
+    if (this.dead) return;
     switch (action) {
       case 'attack':
         // Stamina gates the swing; an exhausted player still sees the animation
@@ -246,8 +270,13 @@ export class DungeonScene implements GameScene {
   }
 
   getInteractionHint(): InteractionHint | null {
+    if (this.dead) return null;
     const chest = this.nearestChest();
     if (chest) return { available: true, label: 'Открыть сундук' };
+    const fire = this.nearestCampfire();
+    if (fire !== null) {
+      return { available: true, label: this.campfires[fire]?.used ? 'Костёр прогорел' : 'Отдохнуть у костра' };
+    }
     const feet = this.player.feet;
     const distance = Math.hypot(feet.x - this.dungeon.exit.x, feet.z - this.dungeon.exit.z);
     if (distance > EXIT_RANGE) return null;
@@ -255,6 +284,21 @@ export class DungeonScene implements GameScene {
       available: true,
       label: this.isLastFloor ? 'Спуск закрыт' : 'Спуститься ниже',
     };
+  }
+
+  /** Index of the closest campfire inside reach, or null. */
+  private nearestCampfire(): number | null {
+    const feet = this.player.feet;
+    let best: number | null = null;
+    let bestDistance = SURVIVAL_CONFIG.campfire.range;
+    this.campfires.forEach((fire, index) => {
+      const distance = Math.hypot(feet.x - fire.x, feet.z - fire.z);
+      if (distance <= bestDistance) {
+        best = index;
+        bestDistance = distance;
+      }
+    });
+    return best;
   }
 
   /** Closest unopened chest inside interaction reach, if any. */
@@ -297,6 +341,12 @@ export class DungeonScene implements GameScene {
       weapon: this.run.inventory.equipped.weapon?.defId ?? null,
       chestsOpened: this.chestsOpened,
       chests: this.chests.length,
+      satiety: Math.round(this.survival.satiety),
+      hunger: this.survival.tier,
+      rations: this.run.rations,
+      restCount: this.restCount,
+      dead: this.dead,
+      runSeconds: Math.round(this.survival.elapsed),
       deaths: this.deaths,
       enemies: this.enemies.filter((enemy) => !enemy.isDead).length,
     };
@@ -315,9 +365,18 @@ export class DungeonScene implements GameScene {
   }
 
   fixedUpdate(step: number): void {
+    if (this.dead) return;
     this.player.fixedUpdate(step);
     this.vitals.tick(step);
     this.floorTime += step;
+
+    // Survival clock: hunger drains, starvation bites, and both feed back into
+    // stamina regeneration and damage output through the vitals.
+    const starvation = this.survival.tick(step, this.player.speed > 0.4);
+    this.vitals.setRegenMultiplier(this.survival.modifiers.regen);
+    this.vitals.setDamageMultiplier(this.survival.modifiers.damage);
+    if (starvation > 0) this.vitals.health.damageDirect(starvation);
+    this.announceHunger();
 
     if (this.pendingStrike >= 0) {
       this.pendingStrike -= step;
@@ -419,9 +478,15 @@ export class DungeonScene implements GameScene {
   }
 
   private interact(): void {
+    if (this.dead) return;
     const chest = this.nearestChest();
     if (chest) {
       this.openChest(chest);
+      return;
+    }
+    const fire = this.nearestCampfire();
+    if (fire !== null) {
+      this.restAt(fire);
       return;
     }
     const feet = this.player.feet;
@@ -530,6 +595,10 @@ export class DungeonScene implements GameScene {
         return chest;
       });
 
+    this.campfires = props.anchors
+      .filter((anchor) => anchor.type === 'campfire')
+      .map((anchor) => ({ x: anchor.x, z: anchor.z, used: false }));
+
     const lights = new RoomLights(dungeon, this.roomLightBudget(this.quality ?? QUALITY_PRESETS.medium));
     this.lights = lights;
     for (const light of lights.objects) this.root.add(light);
@@ -542,6 +611,7 @@ export class DungeonScene implements GameScene {
   private unloadFloor(): void {
     this.clearEnemies();
     this.director = null;
+    this.campfires = [];
     for (const chest of this.chests) chest.dispose();
     this.chests = [];
     for (const door of this.doors) door.dispose();
@@ -795,21 +865,147 @@ export class DungeonScene implements GameScene {
   }
 
   private handlePlayerDeath(): void {
+    if (this.dead) return;
+    this.dead = true;
     this.deaths += 1;
     this.pendingStrike = -1;
-    this.vitals.reset();
-    this.clearEnemies();
-    this.director?.reset();
-    this.player.teleport(this.dungeon.entrance);
-    this.placeHeroAtSpawn();
-    this.vitals.health.grantIFrames(2);
-    this.options.onNotify?.('Тьма забрала вас. Алтарь вернул вас к входу');
+    this.hero.die();
+    this.player.setMoveInput({ x: 0, z: 0, magnitude: 0 });
+    this.deathSummary = {
+      floor: this.dungeon.floor,
+      kills: this.kills,
+      gold: this.run.gold,
+      xp: this.run.xp,
+      items: this.run.inventory.size,
+      seconds: Math.round(this.survival.elapsed),
+      cause: this.survival.isStarving ? 'starvation' : 'combat',
+    };
     this.shake(0.5);
     this.options.onHaptic?.('heavy');
+    this.options.onNotify?.(this.deathSummary.cause === 'starvation' ? 'Голод взял своё' : 'Тьма забрала вас');
+    this.options.onDeath?.(this.deathSummary);
+  }
+
+  /** True once the run has ended; the scene freezes until `restartRun()`. */
+  get isDead(): boolean {
+    return this.dead;
+  }
+
+  getSummary(): RunSummary | null {
+    return this.deathSummary;
+  }
+
+  /**
+   * Starts a completely fresh run on the same engine and WebGL context.
+   *
+   * Every per-run system is reset explicitly instead of recreating the scene:
+   * regenerating a floor and its colliders costs milliseconds, while a new
+   * renderer/physics world would cost hundreds on a phone.
+   */
+  restartRun(seed?: number): void {
+    const nextSeed = (seed ?? (this.dungeon.seed ^ 0x9e3779b9) ^ Date.now()) >>> 0;
+    this.dead = false;
+    this.deathSummary = null;
+    this.kills = 0;
+    this.deaths = 0;
+    this.chestsOpened = 0;
+    this.restCount = 0;
+    this.pendingStrike = -1;
+    // Reset the run first, then re-derive everything from it: gear drives the
+    // stat block, and a fresh run starts with an empty bag.
+    this.run.reset();
+    this.vitals.reset();
+    this.vitals.applyBonuses(this.run.inventory.totals());
+    this.survival.reset();
+    this.lastHungerTier = this.survival.tier;
+    this.hero.revive();
+
+    this.clearEnemies();
+    this.unloadFloor();
+    this.dungeon = DungeonGenerator.generate({ seed: nextSeed, floor: 1 });
+    this.loadFloor(this.dungeon);
+    this.player.teleport(this.dungeon.entrance);
+    this.placeHeroAtSpawn();
+    this.physics.primeQueries();
+    this.lastAttackCount = this.player.attacks;
+    this.lastDodging = false;
+    this.options.onFloorChange?.(1);
+  }
+
+  /** Eats one ration from the run's food; returns false when none are left. */
+  eatRation(): boolean {
+    if (this.dead) return false;
+    if (!this.run.consumeRation()) {
+      this.options.onNotify?.('Пайков не осталось — ищите сундуки');
+      return false;
+    }
+    const taste = this.survival.eat();
+    this.vitals.heal(6);
+    this.damageNumbers.show({ x: this.player.feet.x, y: 1.9, z: this.player.feet.z }, Math.round(taste));
+    this.options.onHaptic?.('light');
+    return true;
+  }
+
+  /** One-shot hunger toasts, fired on tier changes only. */
+  private announceHunger(): void {
+    const tier = this.survival.tier;
+    if (tier === this.lastHungerTier) return;
+    this.lastHungerTier = tier;
+    if (tier === 'hungry') this.options.onNotify?.('Голод: стамина восстанавливается медленнее');
+    if (tier === 'starving') this.options.onNotify?.('Истощение: здоровье убывает, съешьте паёк');
+  }
+
+  /** Rest at a campfire: heals, feeds and can only be used once per fire. */
+  private restAt(index: number): void {
+    const fire = this.campfires[index];
+    if (!fire) return;
+    if (fire.used) {
+      this.options.onNotify?.('Этот костёр уже прогорел');
+      return;
+    }
+    // Resting next to a live monster would be free healing: refuse instead.
+    const feet = this.player.feet;
+    const threat = this.enemies.some(
+      (enemy) =>
+        !enemy.isDead &&
+        Math.hypot(enemy.position.x - feet.x, enemy.position.z - feet.z) < SURVIVAL_CONFIG.campfire.safeRadius,
+    );
+    if (threat) {
+      this.options.onNotify?.('Слишком опасно: рядом враги');
+      return;
+    }
+
+    fire.used = true;
+    this.restCount += 1;
+    const healed = this.vitals.heal(Math.round(this.vitals.maxHp * SURVIVAL_CONFIG.campfire.healFraction));
+    const fed = this.survival.addSatiety(SURVIVAL_CONFIG.campfire.satiety);
+    this.vitals.restoreStamina(SURVIVAL_CONFIG.campfire.stamina);
+    this.hitEffects.burst({ x: fire.x, y: 1.0, z: fire.z }, 1.4, 'spark');
+    if (healed > 0) this.damageNumbers.show({ x: fire.x, y: 1.3, z: fire.z }, healed);
+    this.announceHunger();
+    this.options.onHaptic?.('medium');
+    this.options.onNotify?.(
+      healed > 0 ? `Отдых: +${healed} HP, +${Math.round(fed)} сытости` : `Отдых: +${Math.round(fed)} сытости`,
+    );
   }
 
   private shake(strength: number): void {
     this.shakeStrength = Math.min(1, this.shakeStrength + strength);
+  }
+
+  /** Dev/test helper: world positions of this floor's campfires. */
+  debugCampfirePositions(): { x: number; z: number }[] {
+    return this.campfires.map((fire) => ({ x: fire.x, z: fire.z }));
+  }
+
+  /** Dev/test helper: hurt the player (survival and death paths run for real). */
+  debugHurt(amount: number): void {
+    this.vitals.health.damageDirect(amount);
+  }
+
+  /** Dev/test helper: burn satiety down without waiting minutes. */
+  debugStarve(amount: number): void {
+    this.survival.burn(amount);
   }
 
   /** Dev/test helper: world positions of this floor's chests. */

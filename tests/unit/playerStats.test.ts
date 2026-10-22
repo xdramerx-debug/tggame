@@ -123,6 +123,34 @@ describe('PlayerStats', () => {
     expect(stats.attack.critChance).toBe(1);
   });
 
+  it('scales regeneration and damage by the survival multipliers', () => {
+    const fed = new PlayerStats();
+    const hungry = new PlayerStats();
+    hungry.setRegenMultiplier(0.5);
+    hungry.setDamageMultiplier(0.7);
+
+    expect(hungry.attack.damage).toBeCloseTo(fed.attack.damage * 0.7, 5);
+
+    fed.spendStamina(60);
+    hungry.spendStamina(60);
+    for (let i = 0; i < 120; i += 1) {
+      fed.tick(STEP);
+      hungry.tick(STEP);
+    }
+    expect(hungry.stamina).toBeLessThan(fed.stamina);
+    expect(hungry.regenMultiplier).toBe(0.5);
+  });
+
+  it('restores stamina instantly for a campfire rest', () => {
+    const stats = new PlayerStats();
+    stats.spendStamina(80);
+    const before = stats.stamina;
+    stats.restoreStamina(60);
+    expect(stats.stamina).toBeCloseTo(Math.min(stats.maxStamina, before + 60), 5);
+    stats.restoreStamina(10_000);
+    expect(stats.stamina).toBe(stats.maxStamina);
+  });
+
   it('heals without exceeding the maximum', () => {
     const stats = new PlayerStats();
     stats.takeDamage(100);

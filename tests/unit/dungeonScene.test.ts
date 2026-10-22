@@ -276,6 +276,105 @@ describe('DungeonScene (headless)', () => {
     scene.dispose();
   });
 
+  it('drains hunger in the fixed step and reports the tier', () => {
+    const scene = new DungeonScene({ physics, seed: 4242 });
+    const start = scene.getDebugSnapshot();
+    expect(start.satiety).toBe(80);
+    expect(start.hunger).toBe('fed');
+
+    for (let i = 0; i < 600; i += 1) {
+      physics.step(1 / 60);
+      scene.update(1 / 60, i / 60);
+    }
+    const later = scene.getDebugSnapshot();
+    expect(later.satiety).toBeLessThan(80);
+    expect(later.runSeconds).toBeGreaterThanOrEqual(9);
+
+    // Starving slows regeneration and eventually costs health.
+    scene.debugStarve(100);
+    expect(scene.getDebugSnapshot().hunger).toBe('starving');
+    const hpBefore = scene.getDebugSnapshot().hp ?? 0;
+    for (let i = 0; i < 180; i += 1) physics.step(1 / 60);
+    expect(scene.getDebugSnapshot().hp).toBeLessThan(hpBefore);
+    expect(scene.vitals.regenMultiplier).toBeLessThan(1);
+    scene.dispose();
+  });
+
+  it('eats a ration to fight starvation', () => {
+    const messages: string[] = [];
+    const scene = new DungeonScene({ physics, seed: 4242, onNotify: (text) => messages.push(text) });
+    expect(scene.getDebugSnapshot().rations).toBeGreaterThan(0);
+
+    scene.debugStarve(100);
+    expect(scene.getDebugSnapshot().satiety).toBe(0);
+    expect(scene.eatRation()).toBe(true);
+
+    const after = scene.getDebugSnapshot();
+    expect(after.satiety).toBeGreaterThan(0);
+    expect(after.rations).toBeGreaterThanOrEqual(0);
+    expect(after.hunger).not.toBe('starving');
+
+    // Emptying the food bag is reported, not silently ignored.
+    scene.run.addRations(-50);
+    expect(scene.eatRation()).toBe(false);
+    expect(messages.some((text) => text.includes('Пайков'))).toBe(true);
+    scene.dispose();
+  });
+
+  it('rests at a campfire once, and refuses next to enemies', () => {
+    const scene = new DungeonScene({ physics, seed: 4242 });
+    const fire = scene.debugCampfirePositions()[0];
+    expect(fire).toBeDefined();
+    if (!fire) return;
+
+    scene.debugHurt(40);
+    scene.teleportTo({ x: fire.x + 0.9, z: fire.z });
+    expect(scene.getInteractionHint()?.label).toBe('Отдохнуть у костра');
+
+    scene.triggerAction('interact');
+    expect(scene.getDebugSnapshot().hp).toBeGreaterThan(60);
+    expect(scene.getDebugSnapshot().restCount).toBe(1);
+    // The fire is spent: the offer stays but names the state, and no second heal.
+    const healed = scene.getDebugSnapshot().hp ?? 0;
+    scene.triggerAction('interact');
+    expect(scene.getDebugSnapshot().restCount).toBe(1);
+    expect(scene.getDebugSnapshot().hp ?? 0).toBe(healed);
+    scene.dispose();
+  });
+
+  it('ends the run on death and can start a fresh one', () => {
+    const summaries: { floor: number; kills: number; gold: number; cause: string }[] = [];
+    const scene = new DungeonScene({
+      physics,
+      seed: 4242,
+      onDeath: (summary) => summaries.push({ ...summary }),
+    });
+
+    scene.debugHurt(10_000);
+    physics.step(1 / 60);
+    expect(scene.isDead).toBe(true);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]?.floor).toBe(1);
+    expect(summaries[0]?.cause).toBe('combat');
+    expect(scene.getDebugSnapshot().dead).toBe(true);
+
+    // Frozen: further steps do not tick hunger or re-fire the callback.
+    const frozen = scene.getDebugSnapshot().runSeconds;
+    for (let i = 0; i < 120; i += 1) physics.step(1 / 60);
+    expect(scene.getDebugSnapshot().runSeconds).toBe(frozen);
+    expect(summaries).toHaveLength(1);
+
+    scene.restartRun(777);
+    const fresh = scene.getDebugSnapshot();
+    expect(fresh.dead).toBe(false);
+    expect(fresh.hp).toBe(100);
+    expect(fresh.kills).toBe(0);
+    expect(fresh.gold).toBe(0);
+    expect(fresh.satiety).toBe(80);
+    expect(scene.getSummary()).toBeNull();
+    scene.dispose();
+  });
+
   it('counts attacks and dashes triggered by the HUD', () => {
     const scene = new DungeonScene({ physics, seed: 7 });
     scene.triggerAction('attack');

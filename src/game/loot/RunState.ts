@@ -2,6 +2,7 @@ import { Inventory } from './Inventory';
 import { RARITY_BY_ID, itemById } from './itemTable';
 import type { ItemSlotId } from './itemTable';
 import { rollChestLoot, rollMonsterDrop } from './LootTable';
+import { SURVIVAL_CONFIG } from '@/game/survival/Survival';
 import type { LootRoll, Roll } from './LootTable';
 
 /** One inventory row as the React panel sees it (plain, serialisable). */
@@ -27,6 +28,7 @@ export interface InventoryRow {
 export interface InventorySnapshot {
   readonly gold: number;
   readonly xp: number;
+  readonly rations: number;
   readonly bag: readonly InventoryRow[];
   readonly equipped: { readonly [K in ItemSlotId]: InventoryRow | null };
   readonly capacity: number;
@@ -44,9 +46,11 @@ export interface LootGain {
   readonly items: readonly InventoryRow[];
   /** Items that did not fit into the bag. */
   readonly dropped: number;
+  /** Food rations picked up. */
+  readonly rations: number;
 }
 
-const EMPTY_GAIN: LootGain = { gold: 0, items: [], dropped: 0 };
+const EMPTY_GAIN: LootGain = { gold: 0, items: [], dropped: 0, rations: 0 };
 
 /**
  * Everything that belongs to the current run rather than to the avatar:
@@ -60,6 +64,7 @@ export class RunState {
   readonly inventory = new Inventory();
   private goldValue = 0;
   private xpValue = 0;
+  private rationsValue = SURVIVAL_CONFIG.rations.startCount;
 
   get gold(): number {
     return this.goldValue;
@@ -67,6 +72,21 @@ export class RunState {
 
   get xp(): number {
     return this.xpValue;
+  }
+
+  get rations(): number {
+    return this.rationsValue;
+  }
+
+  addRations(count: number): void {
+    this.rationsValue = Math.max(0, this.rationsValue + Math.trunc(count));
+  }
+
+  /** Consumes one ration; false when the bag of food is empty. */
+  consumeRation(): boolean {
+    if (this.rationsValue <= 0) return false;
+    this.rationsValue -= 1;
+    return true;
   }
 
   addGold(amount: number): void {
@@ -85,8 +105,9 @@ export class RunState {
 
   /** Adds a rolled drop to the run; overflow is reported, never thrown away silently. */
   grant(roll: LootRoll): LootGain {
-    if (roll.gold <= 0 && roll.items.length === 0) return EMPTY_GAIN;
+    if (roll.gold <= 0 && roll.items.length === 0 && roll.rations <= 0) return EMPTY_GAIN;
     this.addGold(roll.gold);
+    this.addRations(roll.rations);
     const rows: InventoryRow[] = [];
     let dropped = 0;
     for (const item of roll.items) {
@@ -98,7 +119,7 @@ export class RunState {
       const row = toRow(instance);
       if (row) rows.push(row);
     }
-    return { gold: roll.gold, items: rows, dropped };
+    return { gold: roll.gold, items: rows, dropped, rations: roll.rations };
   }
 
   /** Rolls and grants a monster drop. */
@@ -117,6 +138,7 @@ export class RunState {
     return {
       gold: this.goldValue,
       xp: this.xpValue,
+      rations: this.rationsValue,
       bag: this.inventory.bag.map((item) => toRow(item)).filter((row): row is InventoryRow => row !== null),
       equipped: {
         weapon: equipped.weapon ? toRow(equipped.weapon) : null,
@@ -138,6 +160,7 @@ export class RunState {
     this.inventory.clear();
     this.goldValue = 0;
     this.xpValue = 0;
+    this.rationsValue = SURVIVAL_CONFIG.rations.startCount;
   }
 }
 

@@ -24,6 +24,10 @@ export interface HeroView {
   update(dt: number, elapsed: number, speed: number, busy: boolean): void;
   attack(): void;
   dodge(): void;
+  /** Plays the death clip/pose; the character stops responding afterwards. */
+  die(): void;
+  /** Returns to life for a new run (clears the death pose). */
+  revive(): void;
   dispose(): void;
 }
 
@@ -62,6 +66,14 @@ class AnimatedHero implements HeroView {
     this.model.playDodge();
   }
 
+  die(): void {
+    this.model.playDeath();
+  }
+
+  revive(): void {
+    this.model.revive();
+  }
+
   dispose(): void {
     this.model.dispose();
   }
@@ -83,14 +95,16 @@ class PlaceholderHeroView implements HeroView {
   }
 
   get state(): string {
+    if (this.dead) return 'death';
     if (this.attackTime > 0) return 'attack';
     return this.moving ? 'walk' : 'idle';
   }
 
   private moving = false;
+  private dead = false;
 
   update(dt: number, elapsed: number, speed: number, busy = false): void {
-    this.moving = speed > 0.05;
+    this.moving = !this.dead && speed > 0.05;
     this.attackTime = Math.max(0, this.attackTime - dt);
     const progress = this.attackTime > 0 ? 1 - this.attackTime / PLAYER_TUNING.attackDuration : 0;
     this.hero.update(dt, elapsed, this.moving, busy ? 0 : progress);
@@ -105,6 +119,19 @@ class PlaceholderHeroView implements HeroView {
 
   dodge(): void {
     this.tiltTime = 0.16;
+  }
+
+  die(): void {
+    // No death clip on the capsule: fall backwards and stop moving.
+    this.dead = true;
+    this.group.rotation.x = -1.2;
+  }
+
+  revive(): void {
+    this.dead = false;
+    this.attackTime = 0;
+    this.tiltTime = 0;
+    this.group.rotation.x = 0;
   }
 
   dispose(): void {
