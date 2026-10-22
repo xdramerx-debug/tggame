@@ -125,6 +125,43 @@ describe('addBonuses', () => {
   });
 });
 
+describe('meta storage persistence', () => {
+  function memoryStore(): { store: Map<string, string>; repo: { get<T>(key: string, fallback: T): Promise<T>; set<T>(key: string, value: T): Promise<void> } } {
+    const store = new Map<string, string>();
+    return {
+      store,
+      repo: {
+        get<T>(key: string, fallback: T): Promise<T> {
+          const raw = store.get(key);
+          const value = raw === undefined ? fallback : (JSON.parse(raw) as T);
+          return Promise.resolve(value);
+        },
+        set<T>(key: string, value: T): Promise<void> {
+          store.set(key, JSON.stringify(value));
+          return Promise.resolve();
+        },
+      },
+    };
+  }
+
+  it('survives a reload: a purchase is readable by the next session', async () => {
+    const { MetaStorage } = await import('@/game/meta/metaStorage');
+    const { repo, store } = memoryStore();
+    const first = new MetaStorage(repo);
+    await first.load();
+    first.update((meta) => meta.addEmbers(40));
+    first.update((meta) => meta.purchase('vitality'));
+    expect(first.value.levelOf('vitality')).toBe(1);
+    // The write is immediate, so a WebView closed right after the tap keeps it.
+    expect(store.size).toBe(1);
+
+    const second = new MetaStorage(repo);
+    const reloaded = await second.load();
+    expect(reloaded.levelOf('vitality')).toBe(1);
+    expect(reloaded.embers).toBe(40 - 12);
+  });
+});
+
 describe('meta storage writes', () => {
   it('writes on every mutation, without waiting for a timer', async () => {
     const { MetaStorage } = await import('@/game/meta/metaStorage');

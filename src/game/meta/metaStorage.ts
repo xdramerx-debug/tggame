@@ -4,6 +4,12 @@ import type { MetaSnapshot } from './MetaState';
 
 const STORAGE_KEY = 'progression';
 
+/** What the storage needs from a repository (Dexie in the app, a map in tests). */
+export interface MetaStoreLike {
+  get<T>(key: string, fallback: T): Promise<T>;
+  set<T>(key: string, value: T): Promise<void>;
+}
+
 /**
  * Persists meta-progression in IndexedDB (the `meta` table from the spec).
  *
@@ -12,10 +18,14 @@ const STORAGE_KEY = 'progression';
  * A memory copy keeps the current session consistent either way.
  */
 export class MetaStorage {
-  private readonly repository = new MetaRepository();
+  private readonly repository: MetaStoreLike;
   private state = new MetaState();
   private loaded = false;
   private dirty = false;
+
+  constructor(repository: MetaStoreLike = new MetaRepository()) {
+    this.repository = repository;
+  }
 
   get value(): MetaState {
     return this.state;
