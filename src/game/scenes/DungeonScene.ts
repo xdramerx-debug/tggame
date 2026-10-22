@@ -687,6 +687,7 @@ export class DungeonScene implements GameScene {
 
   private handlePlayerDeath(): void {
     this.deaths += 1;
+    this.pendingStrike = -1;
     this.vitals.reset();
     this.clearEnemies();
     this.director?.reset();
