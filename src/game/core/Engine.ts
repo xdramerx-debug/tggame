@@ -13,6 +13,8 @@ import { PostFX } from '@/game/visual/PostFX';
 import { DungeonScene } from '@/game/scenes/DungeonScene';
 import { PhysicsWorld } from '@/game/physics';
 import { AssetLoader } from '@/game/assets/AssetLoader';
+import type { InventorySnapshot } from '@/game/loot/RunState';
+import type { ItemSlotId } from '@/game/loot/itemTable';
 import { hapticImpact } from '@/telegram/haptic';
 
 export interface EngineOptions {
@@ -275,6 +277,20 @@ export class Engine {
   setPhysicsDebug(enabled: boolean): void {
     this.gameScene?.setPhysicsDebug?.(enabled);
     this.physicsDebugRequested = enabled;
+  }
+
+  /** Inventory panel data; null before the scene is built. */
+  getInventorySnapshot(): InventorySnapshot | null {
+    return this.gameScene?.getInventorySnapshot?.() as InventorySnapshot | null ?? null;
+  }
+
+  /** Equips a bag item; returns false when the scene rejects it. */
+  equipItem(uid: number): boolean {
+    return this.gameScene?.equipItem?.(uid) ?? false;
+  }
+
+  unequipItem(slot: ItemSlotId): boolean {
+    return this.gameScene?.unequipItem?.(slot) ?? false;
   }
 
   /** Scene diagnostics for the dev bridge; null before the scene is built. */

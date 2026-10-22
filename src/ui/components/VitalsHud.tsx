@@ -10,9 +10,21 @@ export interface Vitals {
   readonly deaths: number;
   readonly floor: number;
   readonly enemies: number;
+  readonly gold: number;
+  readonly items: number;
 }
 
-const INITIAL: Vitals = { hp: 100, maxHp: 100, stamina: 100, kills: 0, deaths: 0, floor: 1, enemies: 0 };
+const INITIAL: Vitals = {
+  hp: 100,
+  maxHp: 100,
+  stamina: 100,
+  kills: 0,
+  deaths: 0,
+  floor: 1,
+  enemies: 0,
+  gold: 0,
+  items: 0,
+};
 
 /**
  * Polls combat vitals for the HUD.
@@ -38,6 +50,8 @@ export function useVitals(): Vitals {
         deaths: scene.deaths ?? 0,
         floor: scene.floor ?? 1,
         enemies: scene.enemies ?? 0,
+        gold: scene.gold ?? 0,
+        items: scene.items ?? 0,
       };
       setVitals((previous) => (sameVitals(previous, next) ? previous : next));
     };
@@ -58,7 +72,9 @@ function sameVitals(a: Vitals, b: Vitals): boolean {
     a.kills === b.kills &&
     a.deaths === b.deaths &&
     a.floor === b.floor &&
-    a.enemies === b.enemies
+    a.enemies === b.enemies &&
+    a.gold === b.gold &&
+    a.items === b.items
   );
 }
 

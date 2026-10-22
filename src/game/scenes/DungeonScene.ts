@@ -44,6 +44,10 @@ import { Enemy } from '@/game/entities/Enemy';
 import { EnemyDirector } from '@/game/world/EnemyDirector';
 import type { PlannedSpawn } from '@/game/world/EnemyDirector';
 import { monsterById } from '@/game/combat/monsterTable';
+import { Chest } from '@/game/entities/Chest';
+import { RunState } from '@/game/loot/RunState';
+import type { InventorySnapshot, LootGain } from '@/game/loot/RunState';
+import type { ItemSlotId } from '@/game/loot/itemTable';
 import { HitEffects } from '@/game/visual/HitEffects';
 import { DamageNumbers } from '@/game/visual/DamageNumbers';
 import { PlayerStats, PLAYER_BASE } from '@/game/player/PlayerStats';
@@ -67,6 +71,8 @@ export interface DungeonSceneOptions {
 }
 
 const EXIT_RANGE = 2.4;
+/** Interaction reach for chests, slightly larger than the stairs. */
+const CHEST_RANGE = 2.1;
 const DEFAULT_MAX_FLOORS = 3;
 /** Fraction of the attack window after which the blade actually connects. */
 const STRIKE_FRACTION = 0.42;
@@ -121,10 +127,14 @@ export class DungeonScene implements GameScene {
   private readonly damageNumbers: DamageNumbers;
   private pendingStrike = -1;
   private kills = 0;
-  private runXp = 0;
   private deaths = 0;
   private floorTime = 0;
   private shakeStrength = 0;
+
+  /** Run economy: gold, XP and the inventory (stage 7). */
+  readonly run = new RunState();
+  private chests: Chest[] = [];
+  private chestsOpened = 0;
 
   constructor(options: DungeonSceneOptions) {
     this.options = options;
@@ -236,6 +246,8 @@ export class DungeonScene implements GameScene {
   }
 
   getInteractionHint(): InteractionHint | null {
+    const chest = this.nearestChest();
+    if (chest) return { available: true, label: 'Открыть сундук' };
     const feet = this.player.feet;
     const distance = Math.hypot(feet.x - this.dungeon.exit.x, feet.z - this.dungeon.exit.z);
     if (distance > EXIT_RANGE) return null;
@@ -243,6 +255,22 @@ export class DungeonScene implements GameScene {
       available: true,
       label: this.isLastFloor ? 'Спуск закрыт' : 'Спуститься ниже',
     };
+  }
+
+  /** Closest unopened chest inside interaction reach, if any. */
+  private nearestChest(): Chest | null {
+    const feet = this.player.feet;
+    let best: Chest | null = null;
+    let bestDistance = CHEST_RANGE;
+    for (const chest of this.chests) {
+      if (chest.isOpen) continue;
+      const distance = Math.hypot(feet.x - chest.position.x, feet.z - chest.position.z);
+      if (distance <= bestDistance) {
+        best = chest;
+        bestDistance = distance;
+      }
+    }
+    return best;
   }
 
   getDebugSnapshot(): DebugSceneSnapshot {
@@ -263,7 +291,12 @@ export class DungeonScene implements GameScene {
       maxHp: this.vitals.maxHp,
       stamina: Math.round(this.vitals.stamina),
       kills: this.kills,
-      xp: this.runXp,
+      xp: this.run.xp,
+      gold: this.run.gold,
+      items: this.run.inventory.size,
+      weapon: this.run.inventory.equipped.weapon?.defId ?? null,
+      chestsOpened: this.chestsOpened,
+      chests: this.chests.length,
       deaths: this.deaths,
       enemies: this.enemies.filter((enemy) => !enemy.isDead).length,
     };
@@ -320,6 +353,7 @@ export class DungeonScene implements GameScene {
     }
     this.hitEffects.update(dt);
     this.damageNumbers.update(dt);
+    for (const chest of this.chests) chest.update(dt);
 
     this.lights?.update(dt, feet, elapsed);
     this.updateExitGlow(feet);
@@ -385,6 +419,11 @@ export class DungeonScene implements GameScene {
   }
 
   private interact(): void {
+    const chest = this.nearestChest();
+    if (chest) {
+      this.openChest(chest);
+      return;
+    }
     const feet = this.player.feet;
     const distance = Math.hypot(feet.x - this.dungeon.exit.x, feet.z - this.dungeon.exit.z);
     if (distance > EXIT_RANGE) return;
@@ -393,6 +432,51 @@ export class DungeonScene implements GameScene {
       return;
     }
     this.descend();
+  }
+
+  /**
+   * Opens a chest, grants its loot and applies equipment if something was
+   * equipped earlier. Loot goes straight into the bag: on a phone, walking over
+   * every coin is a chore, and the toast already names what was found.
+   */
+  private openChest(chest: Chest): void {
+    if (!chest.open()) return;
+    this.chestsOpened += 1;
+    const gain = this.run.lootChest(this.dungeon.floor, Math.random);
+    const position = { x: chest.position.x, y: 1.0, z: chest.position.z };
+    this.hitEffects.burst(position, 1.8, 'spark');
+    this.damageNumbers.show({ x: position.x, y: 1.3, z: position.z }, gain.gold);
+    this.options.onHaptic?.('medium');
+    this.options.onNotify?.(describeLoot('Сундук', gain));
+  }
+
+  /** Inventory snapshot for the HUD panel (plain data, no three.js). */
+  getInventorySnapshot(): InventorySnapshot {
+    return this.run.snapshot();
+  }
+
+  /**
+   * Equips a bag item and re-derives combat stats.
+   * @returns false when the item is unknown (stale UI after a refresh)
+   */
+  equipItem(uid: number): boolean {
+    const result = this.run.inventory.equip(uid);
+    if (!result.ok) return false;
+    this.applyEquipment();
+    return true;
+  }
+
+  /** Returns an equipped item to the bag. */
+  unequipItem(slot: ItemSlotId): boolean {
+    const item = this.run.inventory.unequip(slot);
+    if (!item) return false;
+    this.applyEquipment();
+    return true;
+  }
+
+  /** Single place where equipment is folded into `PlayerStats`. */
+  private applyEquipment(): void {
+    this.vitals.applyBonuses(this.run.inventory.totals());
   }
 
   private placeHeroAtSpawn(): void {
@@ -433,6 +517,19 @@ export class DungeonScene implements GameScene {
     this.floorGroup.add(props.group);
     this.colliders.push(...props.colliders);
 
+    this.chests = props.anchors
+      .filter((anchor) => anchor.type === 'chest')
+      .map((anchor, index) => {
+        const chest = new Chest({
+          id: index,
+          model: this.options.assets?.cloneProp('chest') ?? null,
+          position: { x: anchor.x, z: anchor.z },
+          rotationY: anchor.rotY ?? 0,
+        });
+        this.floorGroup.add(chest.group);
+        return chest;
+      });
+
     const lights = new RoomLights(dungeon, this.roomLightBudget(this.quality ?? QUALITY_PRESETS.medium));
     this.lights = lights;
     for (const light of lights.objects) this.root.add(light);
@@ -445,6 +542,8 @@ export class DungeonScene implements GameScene {
   private unloadFloor(): void {
     this.clearEnemies();
     this.director = null;
+    for (const chest of this.chests) chest.dispose();
+    this.chests = [];
     for (const door of this.doors) door.dispose();
     this.doors = [];
 
@@ -577,8 +676,18 @@ export class DungeonScene implements GameScene {
 
       if (result.killed) {
         this.kills += 1;
-        this.runXp += enemy.definition.xp;
+        this.run.addXp(enemy.definition.xp);
         this.director?.markKilled(enemy.id);
+        const gain = this.run.lootMonster(this.dungeon.floor, Math.random);
+        if (gain.items.length > 0) {
+          this.options.onNotify?.(describeLoot(enemy.definition.label, gain));
+        }
+        if (gain.gold > 0) {
+          this.damageNumbers.show(
+            { x: enemy.position.x, y: 1.4, z: enemy.position.z },
+            gain.gold,
+          );
+        }
       }
     }
     this.shake(0.12);
@@ -703,6 +812,11 @@ export class DungeonScene implements GameScene {
     this.shakeStrength = Math.min(1, this.shakeStrength + strength);
   }
 
+  /** Dev/test helper: world positions of this floor's chests. */
+  debugChestPositions(): { x: number; z: number }[] {
+    return this.chests.map((chest) => ({ x: chest.position.x, z: chest.position.z }));
+  }
+
   /**
    * Dev/test helper: puts one skeleton in front of the player.
    *
@@ -786,4 +900,13 @@ export class DungeonScene implements GameScene {
   get currentDungeon(): Dungeon {
     return this.dungeon;
   }
+}
+
+/** "Сундук: 14 золота · Железный меч (редкое)" for the HUD toast. */
+function describeLoot(source: string, gain: LootGain): string {
+  const parts: string[] = [];
+  if (gain.gold > 0) parts.push(`${gain.gold} золота`);
+  for (const item of gain.items) parts.push(`${item.label} (${item.rarityLabel.toLowerCase()})`);
+  if (gain.dropped > 0) parts.push(`сумка полна — ${gain.dropped} потеряно`);
+  return `${source}: ${parts.join(' · ')}`;
 }

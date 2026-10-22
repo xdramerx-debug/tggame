@@ -1,6 +1,8 @@
 import type { FrameStats, InitProgress, QualityLevel } from '@/types/engine';
 import type { InputAction, InteractionHint, MoveInput } from '@/input/types';
 import type { DebugSnapshot } from '@/game/debug';
+import type { InventorySnapshot } from '@/game/loot/RunState';
+import type { ItemSlotId } from '@/game/loot/itemTable';
 import { Engine } from './core/Engine';
 import { hapticSelection } from '@/telegram/haptic';
 
@@ -111,6 +113,19 @@ class GameHost {
 
   getInteractionHint(): InteractionHint | null {
     return this.engine?.getInteractionHint() ?? null;
+  }
+
+  /** Inventory data for the HUD panel. */
+  getInventorySnapshot(): InventorySnapshot | null {
+    return this.engine?.getInventorySnapshot() ?? null;
+  }
+
+  equipItem(uid: number): boolean {
+    return this.engine?.equipItem(uid) ?? false;
+  }
+
+  unequipItem(slot: ItemSlotId): boolean {
+    return this.engine?.unequipItem(slot) ?? false;
   }
 
   /** Dev-only: spawn one training skeleton in front of the player. */

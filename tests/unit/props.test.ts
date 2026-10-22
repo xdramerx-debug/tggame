@@ -72,10 +72,27 @@ describe('dungeon props', () => {
       const room = dungeon.rooms.find((candidate) => candidate.id === anchor.roomId);
       expect(room).toBeDefined();
       if (!room) continue;
+      if (anchor.type === 'chest') {
+        // Chests sit beside the centre so the player can walk up to them.
+        expect(anchor.rotY).toBeGreaterThanOrEqual(0);
+        expect(room.type).toBe('treasure');
+        continue;
+      }
       expect(anchor.x).toBeCloseTo(room.center.x, 6);
       expect(anchor.z).toBeCloseTo(room.center.z, 6);
       expect(['altar', 'campfire']).toContain(anchor.type);
     }
+    props.dispose();
+  });
+
+  it('creates one interactable chest anchor per treasure room', () => {
+    const dungeon = DungeonGenerator.generate({ seed: 303 });
+    const props = buildProps(dungeon, physics, dungeon.seed);
+    const treasureRooms = dungeon.rooms.filter((room) => room.type === 'treasure');
+    const chests = props.anchors.filter((anchor) => anchor.type === 'chest');
+    expect(chests).toHaveLength(treasureRooms.length);
+    // No instanced chest meshes: the scene owns the openable entity.
+    expect(props.group.getObjectByName('chests')).toBeUndefined();
     props.dispose();
   });
 });

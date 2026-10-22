@@ -28,7 +28,7 @@ export const NO_DAMAGE: DamageResult = {
  * never overflow its maximum.
  */
 export class Health {
-  readonly max: number;
+  max: number;
   private current: number;
   private armorValue: number;
   private iFrameRemaining = 0;
@@ -62,6 +62,19 @@ export class Health {
 
   setArmor(armor: number): void {
     this.armorValue = Math.max(0, armor);
+  }
+
+  /**
+   * Raises or lowers the pool's maximum (equipment, buffs).
+   *
+   * Current HP shifts by the same delta, so putting on a +20 HP amulet is an
+   * immediate gain and taking it off cannot leave the player above their max.
+   */
+  setMax(max: number): void {
+    const next = Math.max(1, max);
+    const delta = next - this.max;
+    this.max = next;
+    this.current = Math.max(0, Math.min(next, this.current + delta));
   }
 
   /** Grants invulnerability; never shortens a longer window. */

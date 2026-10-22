@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import { gameHost } from '@/game/GameHost';
 import { installDebugBridge } from '@/game/debug';
@@ -9,6 +9,7 @@ import type { InteractionHint } from '@/input/types';
 import { hapticImpact } from '@/telegram/haptic';
 import { setCloseConfirmation } from '@/telegram/viewport';
 import { DangerVignette, HealthBar, useVitals } from './components/VitalsHud';
+import { InventorySheet } from './InventorySheet';
 
 /** Polls the scene for an interaction offer; cheap and only while in a run. */
 function useInteractionHint(): InteractionHint | null {
@@ -83,6 +84,7 @@ export function GameScreen(): ReactElement {
   const setScreen = useGameStore((state) => state.setScreen);
   const interactionHint = useInteractionHint();
   const vitals = useVitals();
+  const [inventoryOpen, setInventoryOpen] = useState(false);
 
   useEffect(() => {
     setCloseConfirmation(true);
@@ -97,6 +99,20 @@ export function GameScreen(): ReactElement {
     const params = new URLSearchParams(window.location.search);
     gameHost.setPhysicsDebug(params.get('physics') === '1');
     if (params.get('dummy') === '1') gameHost.spawnDummy();
+  }, []);
+
+  // The bag pauses the run: the panel is modal and the player must not be hit
+  // while reading item stats.
+  const openInventory = useCallback((): void => {
+    hapticImpact('light');
+    setInventoryOpen(true);
+    gameHost.setMoveInput({ x: 0, y: 0, magnitude: 0 });
+    gameHost.pause();
+  }, []);
+
+  const closeInventory = useCallback((): void => {
+    setInventoryOpen(false);
+    gameHost.resume();
   }, []);
 
   const pauseToMenu = (): void => {
@@ -124,6 +140,9 @@ export function GameScreen(): ReactElement {
             <span className="text-[10px] uppercase tracking-widest text-[#5a6470]" data-testid="kill-label">
               ☠ {vitals.kills}
             </span>
+            <span className="text-[10px] uppercase tracking-widest text-gold/80" data-testid="gold-label">
+              ◈ {vitals.gold}
+            </span>
           </div>
         </div>
 
@@ -140,23 +159,30 @@ export function GameScreen(): ReactElement {
           </button>
           <button
             type="button"
-            className="hud-panel flex h-[48px] w-[48px] items-center justify-center text-lg opacity-40"
-            aria-label="Инвентарь (откроется на этапе 7)"
-            aria-disabled="true"
-            disabled
+            className="hud-panel relative flex h-[48px] w-[48px] items-center justify-center text-lg active:scale-95"
+            aria-label={`Инвентарь, предметов: ${vitals.items}`}
+            onPointerDown={() => hapticImpact('light')}
+            onClick={openInventory}
+            data-testid="inventory-button"
           >
             🎒
+            {vitals.items > 0 ? (
+              <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-gold px-1 text-[10px] font-bold leading-[18px] text-black">
+                {vitals.items}
+              </span>
+            ) : null}
           </button>
         </div>
       </div>
 
+      <InventorySheet open={inventoryOpen} onClose={closeInventory} />
       <DangerVignette hp={vitals.hp} maxHp={vitals.maxHp} />
       <HudToast />
       <PerfOverlay />
 
       <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+6px)] z-0 flex justify-center">
         <p className="hud-panel hud-outline px-3 py-1 text-center text-[11px] leading-snug text-[#9aa3ae]">
-          Этап 6 · бой в реальном времени · ?seed=42 · ?quality=low
+          Этап 7 · лут и снаряжение · ?seed=42 · ?quality=low
         </p>
       </div>
     </div>

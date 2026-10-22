@@ -22,23 +22,46 @@ export const PLAYER_BASE = {
   hitIFrames: 0.45,
 } as const;
 
+/** Bonuses granted by equipment; every field is additive. */
+export interface StatBonuses {
+  readonly damage: number;
+  readonly armor: number;
+  readonly maxHp: number;
+  readonly stamina: number;
+  readonly critChance: number;
+  readonly critMultiplier: number;
+}
+
+export const NO_BONUSES: StatBonuses = {
+  damage: 0,
+  armor: 0,
+  maxHp: 0,
+  stamina: 0,
+  critChance: 0,
+  critMultiplier: 0,
+};
+
 /**
  * Player vitals and action budget.
  *
  * Kept separate from `PlayerController` (which only knows how to move a capsule)
  * so the HUD, combat and later survival systems read the same numbers, and so
  * stamina can gate actions without teaching the controller about stamina.
+ *
+ * Equipment is applied through `applyBonuses()`: the inventory never mutates
+ * stats directly, and there is exactly one place where base + gear is combined.
  */
 export class PlayerStats {
   readonly health: Health;
-  readonly attack: AttackProfile;
   private staminaValue: number;
   private staminaLockout = 0;
+  private bonusesValue: StatBonuses = NO_BONUSES;
+  private attackProfile: AttackProfile;
 
   constructor() {
     this.health = new Health(PLAYER_BASE.maxHp, PLAYER_BASE.armor);
     this.staminaValue = PLAYER_BASE.maxStamina;
-    this.attack = playerAttackProfile(
+    this.attackProfile = playerAttackProfile(
       PLAYER_BASE.attackDamage,
       PLAYER_BASE.critChance,
       PLAYER_BASE.critMultiplier,
@@ -62,11 +85,24 @@ export class PlayerStats {
   }
 
   get maxStamina(): number {
-    return PLAYER_BASE.maxStamina;
+    return PLAYER_BASE.maxStamina + this.bonusesValue.stamina;
   }
 
   get staminaRatio(): number {
-    return this.staminaValue / PLAYER_BASE.maxStamina;
+    return this.staminaValue / this.maxStamina;
+  }
+
+  get armor(): number {
+    return this.health.armor;
+  }
+
+  /** Current attack profile (base + equipment). */
+  get attack(): AttackProfile {
+    return this.attackProfile;
+  }
+
+  get bonuses(): StatBonuses {
+    return this.bonusesValue;
   }
 
   get isDead(): boolean {
@@ -75,6 +111,25 @@ export class PlayerStats {
 
   get invulnerable(): boolean {
     return this.health.invulnerable;
+  }
+
+  /**
+   * Recomputes derived stats from the equipped gear.
+   *
+   * Max HP is adjusted through `Health.setMax`, which keeps the current value
+   * consistent; max stamina is applied on the next tick so a removed charm can
+   * never leave the player with more stamina than they can hold.
+   */
+  applyBonuses(bonuses: StatBonuses): void {
+    this.bonusesValue = bonuses;
+    this.health.setArmor(PLAYER_BASE.armor + bonuses.armor);
+    this.health.setMax(PLAYER_BASE.maxHp + bonuses.maxHp);
+    this.attackProfile = playerAttackProfile(
+      PLAYER_BASE.attackDamage + bonuses.damage,
+      Math.min(1, PLAYER_BASE.critChance + bonuses.critChance),
+      PLAYER_BASE.critMultiplier + bonuses.critMultiplier,
+    );
+    this.staminaValue = Math.min(this.staminaValue, this.maxStamina);
   }
 
   /** @returns true when the stamina was available and has been spent */
@@ -105,15 +160,16 @@ export class PlayerStats {
   tick(dt: number): void {
     this.health.tick(dt);
     this.staminaLockout = Math.max(0, this.staminaLockout - dt);
-    if (this.staminaLockout === 0 && this.staminaValue < PLAYER_BASE.maxStamina) {
-      this.staminaValue = Math.min(PLAYER_BASE.maxStamina, this.staminaValue + PLAYER_BASE.staminaRegen * dt);
+    if (this.staminaValue > this.maxStamina) this.staminaValue = this.maxStamina;
+    if (this.staminaLockout === 0 && this.staminaValue < this.maxStamina) {
+      this.staminaValue = Math.min(this.maxStamina, this.staminaValue + PLAYER_BASE.staminaRegen * dt);
     }
   }
 
   /** Full restore for respawn / new floor. */
   reset(): void {
     this.health.reset();
-    this.staminaValue = PLAYER_BASE.maxStamina;
+    this.staminaValue = this.maxStamina;
     this.staminaLockout = 0;
   }
 }

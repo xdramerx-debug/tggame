@@ -1,0 +1,130 @@
+{
+  "capacity": 12,
+  "rarities": [
+    { "id": "common", "label": "Обычное", "weight": 62, "power": 1, "color": "#9aa3ae" },
+    { "id": "rare", "label": "Редкое", "weight": 28, "power": 1.45, "color": "#5aa9e6" },
+    { "id": "epic", "label": "Эпическое", "weight": 10, "power": 2, "color": "#c07cf5" }
+  ],
+  "slots": [
+    { "id": "weapon", "label": "Оружие", "icon": "⚔" },
+    { "id": "armor", "label": "Броня", "icon": "🛡" },
+    { "id": "charm", "label": "Амулет", "icon": "✦" }
+  ],
+  "items": [
+    {
+      "id": "rustedBlade",
+      "label": "Ржавый клинок",
+      "slot": "weapon",
+      "icon": "🗡",
+      "tier": 1,
+      "minFloor": 1,
+      "stats": { "damage": 6 }
+    },
+    {
+      "id": "ironSword",
+      "label": "Железный меч",
+      "slot": "weapon",
+      "icon": "⚔",
+      "tier": 2,
+      "minFloor": 1,
+      "stats": { "damage": 11 }
+    },
+    {
+      "id": "emberAxe",
+      "label": "Тлеющий топор",
+      "slot": "weapon",
+      "icon": "🪓",
+      "tier": 3,
+      "minFloor": 2,
+      "stats": { "damage": 16, "critChance": 0.03 }
+    },
+    {
+      "id": "graveScythe",
+      "label": "Коса могильщика",
+      "slot": "weapon",
+      "icon": "⚰",
+      "tier": 4,
+      "minFloor": 3,
+      "stats": { "damage": 22, "critMultiplier": 0.2 }
+    },
+    {
+      "id": "leatherVest",
+      "label": "Кожаный жилет",
+      "slot": "armor",
+      "icon": "🧥",
+      "tier": 1,
+      "minFloor": 1,
+      "stats": { "armor": 3 }
+    },
+    {
+      "id": "chainHauberk",
+      "label": "Кольчуга",
+      "slot": "armor",
+      "icon": "🛡",
+      "tier": 2,
+      "minFloor": 1,
+      "stats": { "armor": 7, "maxHp": 10 }
+    },
+    {
+      "id": "ironPlate",
+      "label": "Железные латы",
+      "slot": "armor",
+      "icon": "🏰",
+      "tier": 3,
+      "minFloor": 2,
+      "stats": { "armor": 12, "maxHp": 8 }
+    },
+    {
+      "id": "runeCuirass",
+      "label": "Рунный доспех",
+      "slot": "armor",
+      "icon": "🔮",
+      "tier": 4,
+      "minFloor": 3,
+      "stats": { "armor": 9, "maxHp": 24 }
+    },
+    {
+      "id": "boneCharm",
+      "label": "Костяной оберег",
+      "slot": "charm",
+      "icon": "🦴",
+      "tier": 1,
+      "minFloor": 1,
+      "stats": { "stamina": 15 }
+    },
+    {
+      "id": "bloodPendant",
+      "label": "Кровавый подвесок",
+      "slot": "charm",
+      "icon": "🩸",
+      "tier": 2,
+      "minFloor": 1,
+      "stats": { "maxHp": 14 }
+    },
+    {
+      "id": "wolfFang",
+      "label": "Волчий клык",
+      "slot": "charm",
+      "icon": "🐺",
+      "tier": 3,
+      "minFloor": 2,
+      "stats": { "critChance": 0.05, "damage": 3 }
+    },
+    {
+      "id": "ashSigil",
+      "label": "Печать пепла",
+      "slot": "charm",
+      "icon": "🔥",
+      "tier": 4,
+      "minFloor": 3,
+      "stats": { "damage": 6, "armor": 2, "stamina": 8 }
+    }
+  ],
+  "loot": {
+    "monsterGold": { "min": 1, "max": 5, "perFloor": 1 },
+    "monsterItemChance": 0.22,
+    "chestGold": { "min": 8, "max": 20, "perFloor": 4 },
+    "chestItems": { "min": 1, "max": 2 },
+    "maxCarried": 12
+  }
+}

@@ -30,7 +30,14 @@ interface Transform {
 export interface PropsResult {
   readonly group: Group;
   /** Positions of altars/campfires used by later systems (rest, save). */
-  readonly anchors: { readonly type: string; readonly x: number; readonly z: number; readonly roomId: number }[];
+  readonly anchors: {
+    readonly type: string;
+    readonly x: number;
+    readonly z: number;
+    readonly roomId: number;
+    /** Interaction props (chests) carry their facing. */
+    readonly rotY?: number;
+  }[];
   readonly drawCalls: number;
   /** Static colliders created for pillars; removed on floor unload. */
   readonly colliders: readonly Collider[];
@@ -55,7 +62,6 @@ export function buildProps(dungeon: Dungeon, physics: PhysicsWorld, seed: number
   const anchors: PropsResult['anchors'] = [];
   const colliders: Collider[] = [];
 
-  const woodMaterial = new MeshStandardMaterial({ color: 0x5a4128, roughness: 0.85 });
   const stoneMaterial = new MeshStandardMaterial({ color: 0x6b7280, roughness: 0.95 });
   const boneMaterial = new MeshStandardMaterial({ color: 0xd8d2c2, roughness: 0.7 });
   const flameMaterial = new MeshStandardMaterial({
@@ -63,12 +69,6 @@ export function buildProps(dungeon: Dungeon, physics: PhysicsWorld, seed: number
     emissive: new Color(0xff8a3d),
     emissiveIntensity: 3.2,
     roughness: 0.4,
-  });
-  const goldMaterial = new MeshStandardMaterial({
-    color: 0xc9a227,
-    emissive: new Color(0x3a2c07),
-    metalness: 0.75,
-    roughness: 0.35,
   });
   const metalMaterial = new MeshStandardMaterial({ color: 0x40464f, metalness: 0.85, roughness: 0.4 });
   const arcaneMaterial = new MeshStandardMaterial({
@@ -78,21 +78,12 @@ export function buildProps(dungeon: Dungeon, physics: PhysicsWorld, seed: number
     roughness: 0.3,
     metalness: 0.5,
   });
-  disposableMaterials.push(
-    woodMaterial,
-    stoneMaterial,
-    boneMaterial,
-    flameMaterial,
-    goldMaterial,
-    metalMaterial,
-    arcaneMaterial,
-  );
+  disposableMaterials.push(stoneMaterial, boneMaterial, flameMaterial, metalMaterial, arcaneMaterial);
 
   const torches: Transform[] = [];
   const bones: Transform[] = [];
   const rubble: Transform[] = [];
   const candles: Transform[] = [];
-  const chests: Transform[] = [];
   const altars: Transform[] = [];
   const campfires: Transform[] = [];
 
@@ -160,7 +151,15 @@ export function buildProps(dungeon: Dungeon, physics: PhysicsWorld, seed: number
           break;
         }
         case 'chest': {
-          chests.push({ x: room.center.x + 1.6, y: 0, z: room.center.z + 1.4, rotY: rng() * Math.PI * 2 });
+          // Chests are real interactable entities (stage 7), not instanced
+          // furniture: the scene builds one GLB per anchor so it can be opened.
+          anchors.push({
+            type: 'chest',
+            x: room.center.x + 1.6,
+            z: room.center.z + 1.4,
+            roomId: room.id,
+            rotY: rng() * Math.PI * 2,
+          });
           break;
         }
         case 'altar': {
@@ -244,7 +243,6 @@ export function buildProps(dungeon: Dungeon, physics: PhysicsWorld, seed: number
   addInstanced(new BoxGeometry(0.5, 0.06, 0.07), boneMaterial, bones, 'bones');
   addInstanced(new DodecahedronGeometry(0.3, 0), stoneMaterial, rubble, 'rubble');
   addInstanced(new CylinderGeometry(0.03, 0.035, 0.24, 6), boneMaterial, candles, 'candles');
-  addInstanced(new BoxGeometry(0.7, 0.45, 0.5), woodMaterial, chests, 'chests');
   addInstanced(new BoxGeometry(0.9, 0.7, 0.9), stoneMaterial, altars, 'altars');
   addInstanced(new CylinderGeometry(0.18, 0.22, 0.9, 6), stoneMaterial, campfires, 'campfire-stones');
   addInstanced(new ConeGeometry(0.22, 0.55, 5), flameMaterial, campfires.map((c) => ({ ...c, y: 0.5 })), 'campfire-flames');
@@ -252,9 +250,6 @@ export function buildProps(dungeon: Dungeon, physics: PhysicsWorld, seed: number
   // Altar crystals glow: separate emissive instance set.
   if (altars.length > 0) {
     addInstanced(new BoxGeometry(0.28, 0.5, 0.28), arcaneMaterial, altars.map((a) => ({ ...a, y: 0.95 })), 'altar-crystals');
-  }
-  if (chests.length > 0) {
-    addInstanced(new BoxGeometry(0.72, 0.06, 0.06), goldMaterial, chests.map((c) => ({ ...c, y: 0.34 })), 'chest-bands');
   }
 
   const drawCalls = group.children.length;

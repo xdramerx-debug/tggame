@@ -38,6 +38,16 @@ export interface DebugSceneSnapshot {
   readonly stamina?: number;
   /** Enemies killed this run. */
   readonly kills?: number;
+  /** Gold carried this run. */
+  readonly gold?: number;
+  /** Items in the bag (equipped items are counted separately). */
+  readonly items?: number;
+  /** Definition id of the equipped weapon, or null. */
+  readonly weapon?: string | null;
+  /** Chests generated on the current floor. */
+  readonly chests?: number;
+  /** Chests opened on the current floor. */
+  readonly chestsOpened?: number;
   /** Experience earned from kills this run. */
   readonly xp?: number;
   /** Player deaths this run (respawns at the entrance until stage 8). */
@@ -85,6 +95,12 @@ export interface GameScene {
   readonly shakeAmount?: number;
   /** Clears the accumulated shake once the camera rig has applied it. */
   consumeShake?(): void;
+  /** Plain inventory snapshot for the HUD panel. */
+  getInventorySnapshot?(): unknown;
+  /** Equips a bag item (uid from the inventory snapshot). */
+  equipItem?(uid: number): boolean;
+  /** Unequips a slot and returns the item to the bag. */
+  unequipItem?(slot: 'weapon' | 'armor' | 'charm'): boolean;
   /** Read-only diagnostics for the dev bridge. */
   getDebugSnapshot(): DebugSceneSnapshot;
   /** Re-apply tier-dependent knobs (shadow size, light count, particle budget). */

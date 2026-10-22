@@ -41,17 +41,37 @@ export class AssetLoader {
   }
 
   /**
-   * Loads the characters the run needs (hero + first monsters) and reports
-   * progress in the splash stage.
+   * Loads everything a run needs — characters and interactive props — and
+   * reports progress for the splash stage.
+   *
+   * A single broken GLB must not cost the player the whole run: each asset is
+   * loaded in isolation, and a failure only degrades that one model to its
+   * procedural fallback (placeholder hero, box chest).
    */
   async preloadRun(onProgress?: (progress: LoadProgress) => void): Promise<void> {
-    const ids = Object.keys(CHARACTERS) as CharacterId[];
+    const characters = Object.keys(CHARACTERS) as CharacterId[];
+    const propIds = Object.keys(PROPS) as PropId[];
+    const total = characters.length + propIds.length;
     let loaded = 0;
-    for (const id of ids) {
-      onProgress?.({ loaded, total: ids.length, label: id });
-      await this.loadCharacter(id);
+    for (const id of characters) {
+      onProgress?.({ loaded, total, label: id });
+      try {
+        await this.loadCharacter(id);
+      } catch (error) {
+        console.warn(`[assets] character "${id}" failed to load`, error);
+      }
       loaded += 1;
-      onProgress?.({ loaded, total: ids.length, label: id });
+      onProgress?.({ loaded, total, label: id });
+    }
+    for (const id of propIds) {
+      onProgress?.({ loaded, total, label: id });
+      try {
+        await this.loadProp(id);
+      } catch (error) {
+        console.warn(`[assets] prop "${id}" failed to load`, error);
+      }
+      loaded += 1;
+      onProgress?.({ loaded, total, label: id });
     }
   }
 

@@ -214,6 +214,68 @@ describe('DungeonScene (headless)', () => {
     scene.dispose();
   });
 
+  it('opens a chest once: gold, loot, toast and no double dip', () => {
+    const messages: string[] = [];
+    const scene = new DungeonScene({ physics, seed: 4242, onNotify: (text) => messages.push(text) });
+    expect(scene.getDebugSnapshot().chests).toBeGreaterThan(0);
+
+    const chests = scene.debugChestPositions();
+    const chest = chests[0];
+    expect(chest).toBeDefined();
+    if (!chest) return;
+
+    // Out of reach: no chest offer.
+    scene.teleportTo({ x: chest.x + 6, z: chest.z });
+    expect(scene.getInteractionHint()).toBeNull();
+
+    scene.teleportTo({ x: chest.x + 0.8, z: chest.z });
+    expect(scene.getInteractionHint()?.label).toBe('Открыть сундук');
+
+    scene.triggerAction('interact');
+    const opened = scene.getDebugSnapshot();
+    expect(opened.chestsOpened).toBe(1);
+    expect(opened.gold).toBeGreaterThan(0);
+    expect(opened.items).toBeGreaterThan(0);
+    // The chest is spent: the offer disappears and a second interact is a no-op.
+    expect(scene.getInteractionHint()).toBeNull();
+    scene.triggerAction('interact');
+    expect(scene.getDebugSnapshot().chestsOpened).toBe(1);
+    expect(messages.some((message) => message.startsWith('Сундук:'))).toBe(true);
+    scene.dispose();
+  });
+
+  it('equips and unequips loot, and the stats follow', () => {
+    const scene = new DungeonScene({ physics, seed: 4242 });
+    // Seed the bag through a chest, then equip the strongest item.
+    const chest = scene.debugChestPositions()[0];
+    if (!chest) return;
+    scene.teleportTo({ x: chest.x + 0.7, z: chest.z });
+    scene.triggerAction('interact');
+
+    const before = scene.getInventorySnapshot();
+    expect(before.bag.length).toBeGreaterThan(0);
+    const candidate = before.bag[0];
+    expect(candidate).toBeDefined();
+    if (!candidate) return;
+
+    const baseDamage = scene.vitals.attack.damage;
+    expect(scene.equipItem(candidate.uid)).toBe(true);
+    const equipped = scene.getInventorySnapshot();
+    expect(equipped.equipped[candidate.slot]?.uid).toBe(candidate.uid);
+    if (candidate.slot === 'weapon') {
+      expect(scene.getDebugSnapshot().weapon).toBe(candidate.defId);
+    }
+
+    const bonus = equipped.totals.damage;
+    expect(scene.vitals.attack.damage).toBeCloseTo(baseDamage + bonus, 5);
+
+    expect(scene.unequipItem(candidate.slot)).toBe(true);
+    expect(scene.vitals.attack.damage).toBeCloseTo(baseDamage, 5);
+    // A stale uid (e.g. after a refresh) is rejected, not thrown on.
+    expect(scene.equipItem(999_999)).toBe(false);
+    scene.dispose();
+  });
+
   it('counts attacks and dashes triggered by the HUD', () => {
     const scene = new DungeonScene({ physics, seed: 7 });
     scene.triggerAction('attack');

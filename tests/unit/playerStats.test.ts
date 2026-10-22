@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PLAYER_BASE, PlayerStats } from '@/game/player/PlayerStats';
+import { NO_BONUSES, PLAYER_BASE, PlayerStats } from '@/game/player/PlayerStats';
+import type { StatBonuses } from '@/game/player/PlayerStats';
 
 const STEP = 1 / 60;
 
@@ -80,6 +81,46 @@ describe('PlayerStats', () => {
     const plain = stats.rollAttack(() => 0.99);
     expect(plain.critical).toBe(false);
     expect(plain.raw).toBeGreaterThan(PLAYER_BASE.attackDamage);
+  });
+
+  it('folds equipment into damage, armour, hp, stamina and crit', () => {
+    const stats = new PlayerStats();
+    const bonuses: StatBonuses = {
+      damage: 15,
+      armor: 10,
+      maxHp: 25,
+      stamina: 20,
+      critChance: 0.06,
+      critMultiplier: 0.2,
+    };
+    stats.applyBonuses(bonuses);
+
+    expect(stats.attack.damage).toBe(PLAYER_BASE.attackDamage + 15);
+    expect(stats.attack.critChance).toBeCloseTo(PLAYER_BASE.critChance + 0.06, 5);
+    expect(stats.attack.critMultiplier).toBeCloseTo(PLAYER_BASE.critMultiplier + 0.2, 5);
+    expect(stats.maxHp).toBe(PLAYER_BASE.maxHp + 25);
+    expect(stats.hp).toBe(PLAYER_BASE.maxHp + 25);
+    expect(stats.armor).toBe(PLAYER_BASE.armor + 10);
+    expect(stats.maxStamina).toBe(PLAYER_BASE.maxStamina + 20);
+  });
+
+  it('clamps stamina and current hp when equipment is removed', () => {
+    const stats = new PlayerStats();
+    stats.applyBonuses({ ...NO_BONUSES, maxHp: 40, stamina: 30 });
+    // Spend everything, then take damage, then strip the gear.
+    for (let i = 0; i < 20; i += 1) stats.spendStamina(10);
+    stats.takeDamage(200);
+    stats.applyBonuses(NO_BONUSES);
+
+    expect(stats.maxHp).toBe(PLAYER_BASE.maxHp);
+    expect(stats.hp).toBeLessThanOrEqual(PLAYER_BASE.maxHp);
+    expect(stats.stamina).toBeLessThanOrEqual(PLAYER_BASE.maxStamina);
+  });
+
+  it('caps crit chance at 100 % when gear stacks', () => {
+    const stats = new PlayerStats();
+    stats.applyBonuses({ ...NO_BONUSES, critChance: 5 });
+    expect(stats.attack.critChance).toBe(1);
   });
 
   it('heals without exceeding the maximum', () => {
