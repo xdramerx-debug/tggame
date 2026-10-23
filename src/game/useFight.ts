@@ -86,13 +86,24 @@ export function useFight(options: UseFightOptions): FightApi {
     const initialQuality: QualityLevel = quality === 'auto' ? 'medium' : quality;
     setError(null);
 
-    // WebGL can be missing entirely (old WebView, blocked GPU). Fail loudly in
-    // the HUD instead of throwing out of the effect and blanking the screen.
+    // WebGL can be missing entirely (old WebView, blocked GPU). Probe it first
+    // so the screen can explain itself instead of throwing out of the effect
+    // and blanking the page. Three.js reuses the context created here.
+    const probe = canvas.getContext('webgl2', {
+      antialias: initialQuality !== 'low',
+      alpha: false,
+      powerPreference: 'high-performance',
+    });
+    if (!probe) {
+      setError('Этот телефон не тянет WebGL. Яма закрыта.');
+      return;
+    }
+
     let stage: FightStage;
     try {
       stage = new FightStage(canvas, initialQuality);
     } catch {
-      setError('Этот телефон не тянет WebGL. Яма закрыта.');
+      setError('3D-движок не запустился. Попробуй обновить браузер.');
       return;
     }
     stage.setFighters(player, opponent);
@@ -238,7 +249,9 @@ export function useFight(options: UseFightOptions): FightApi {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('blur', onBlur);
       sfx.stopAmbience();
-      window.setTimeout(() => { stage.dispose(); }, 0);
+      // Dispose synchronously: the <canvas> is shared between effect runs, so
+      // a renderer that outlives its effect would steal the context from the next.
+      stage.dispose();
       engineRef.current = null;
       controls.clear();
     };

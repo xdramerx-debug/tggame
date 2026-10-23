@@ -53,8 +53,35 @@ export function FightScreen(): ReactElement {
       <canvas ref={fight.canvasRef} data-testid="fight-canvas" className="absolute inset-0 h-full w-full touch-none" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(0,0,0,0.55)_100%)]" />
 
-      {fight.hud && <Hud snapshot={fight.hud} player={player} opponent={opponent} onPause={() => { fight.setPaused(true); }} />}
-      <TouchControls controls={fight.controls} snapshot={fight.hud} />
+      {fight.error ? (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-ink/90 px-8 text-center">
+          <div className="font-display text-[26px] uppercase text-blood">3D не запустилось</div>
+          <div className="max-w-[34ch] text-[14px] leading-snug text-bone/60">{fight.error}</div>
+          <button
+            type="button"
+            onClick={() => {
+              setScreen('menu');
+            }}
+            className="min-h-[56px] rounded-md border border-bone/25 bg-black/50 px-6 font-display text-[15px] uppercase text-bone/80"
+          >
+            в меню
+          </button>
+        </div>
+      ) : (
+        <>
+          {fight.hud && (
+            <Hud
+              snapshot={fight.hud}
+              player={player}
+              opponent={opponent}
+              onPause={() => {
+                fight.setPaused(true);
+              }}
+            />
+          )}
+          <TouchControls controls={fight.controls} snapshot={fight.hud} />
+        </>
+      )}
 
       {fight.paused && (
         <motion.div

@@ -98,6 +98,7 @@ export function Hud({ snapshot, player, opponent, onPause }: HudProps): ReactEle
               <button
                 type="button"
                 aria-label="Пауза"
+                data-testid="pause-button"
                 onPointerDown={(event) => {
                   event.stopPropagation();
                   onPause();
@@ -139,6 +140,14 @@ export function Hud({ snapshot, player, opponent, onPause }: HudProps): ReactEle
           </motion.div>
         )}
       </AnimatePresence>
+
+      {snapshot.phase === 'intro' && snapshot.round === 1 && snapshot.phaseTicks > 20 && (
+        <div className="absolute inset-x-0 top-[58%] flex justify-center px-4">
+          <div className="rounded border border-bone/15 bg-black/55 px-3 py-1.5 text-center text-[10px] uppercase tracking-[0.14em] text-bone/50">
+            стик — ход · блок — держать · удар/пинок — серия в спешл
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {banner && (
