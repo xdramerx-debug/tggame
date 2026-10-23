@@ -33,6 +33,8 @@ export default defineConfig({
       name: 'android-chrome-landscape',
       use: {
         ...devices['Pixel 7 landscape'],
+        // Software rendering on CI: a 2.6x DPR canvas would crawl.
+        deviceScaleFactor: 1,
         launchOptions: {
           args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
         },
@@ -40,7 +42,10 @@ export default defineConfig({
     },
     {
       name: 'ios-webkit-landscape',
-      use: devices['iPhone 13 landscape'],
+      use: {
+        ...devices['iPhone 13 landscape'],
+        deviceScaleFactor: 1,
+      },
     },
   ],
 });

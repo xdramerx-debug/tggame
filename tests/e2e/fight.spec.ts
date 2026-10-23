@@ -11,6 +11,21 @@ import { expect, test } from '@playwright/test';
 const NO_WEBGL = 'WebKit on the Linux CI runner has no reliable WebGL context';
 
 test.beforeEach(async ({ page }) => {
+  // Force the cheapest render preset: CI runners have no GPU and SwiftShader
+  // would otherwise spend seconds per frame in the 3D stage.
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      'freakpit.settings.v1',
+      JSON.stringify({
+        sound: false,
+        quality: 'low',
+        difficulty: 'normal',
+        fighterId: 'grizlo',
+        wins: 0,
+        fights: 0,
+      }),
+    );
+  });
   await page.goto('/');
 });
 
