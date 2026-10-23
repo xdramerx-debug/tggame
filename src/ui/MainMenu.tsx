@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { ReactElement } from 'react';
 import { useGameStore } from '@/store/useGameStore';
 import { useUiStore } from '@/store/useGameStore';
@@ -8,6 +8,8 @@ import { enterDomFullscreen } from '@/mobile/fullscreen';
 import { lockLandscape } from '@/mobile/orientation';
 import { gameHost } from '@/game/GameHost';
 import { useMetaStore } from '@/store/useMetaStore';
+import { greetingFor, readPlayer } from '@/telegram/player';
+import { shareInvite } from '@/telegram/share';
 import { audio } from '@/game/audio';
 
 interface MenuButtonProps {
@@ -45,6 +47,9 @@ export function MainMenu(): ReactElement {
   const setScreen = useGameStore((state) => state.setScreen);
   const openSheet = useUiStore((state) => state.openSheet);
   const embers = useMetaStore((state) => state.embers);
+  // Read once on mount: the name never changes during a session, and reading it
+  // from the hash on every render would be pure waste.
+  const player = useMemo(() => readPlayer(), []);
 
   useEffect(() => {
     hideBackButton();
@@ -67,27 +72,41 @@ export function MainMenu(): ReactElement {
       <header className="flex flex-col items-start">
         <h1 className="font-display text-4xl leading-none tracking-[0.18em] text-gold sm:text-5xl">TENEBRIS</h1>
         <div className="gold-divider mt-2 w-32" />
-        <p className="mt-2 max-w-[46ch] text-sm text-[#9aa3ae]">
+        <p className="mt-2 max-w-[46ch] text-sm text-[#9aa3ae]" data-testid="menu-greeting">
+          {greetingFor(player)}
+        </p>
+        <p className="mt-1 max-w-[46ch] text-[12px] text-[#5a6470]">
           Рогалик-выживание в подземелье. Только телефон, только прикосновения.
         </p>
       </header>
 
-      <div className="mx-auto flex w-full max-w-md flex-col gap-3">
+      {/* Landscape phones are short: one primary action, then a 2×2 grid of
+          secondary ones, so five entries still fit above the 390 px fold. */}
+      <div className="mx-auto flex w-full max-w-lg flex-col gap-2">
         <MenuButton label="Начать забег" hint="этаж 1" variant="primary" onClick={startRun} />
-        <MenuButton
-          label="Алтарь"
-          hint={`🔥 ${embers}`}
-          onClick={() => {
-            hapticImpact('light');
-            setScreen('meta');
-          }}
-        />
-        <MenuButton label="Настройки" hint="качество · управление" onClick={() => openSheet('settings')} />
-        <MenuButton label="Титры" hint="ассеты и лицензии" onClick={() => openSheet('credits')} />
+        <div className="grid grid-cols-2 gap-2">
+          <MenuButton
+            label="Алтарь"
+            hint={`🔥 ${embers}`}
+            onClick={() => {
+              hapticImpact('light');
+              setScreen('meta');
+            }}
+          />
+          <MenuButton label="Настройки" hint="звук · качество" onClick={() => openSheet('settings')} />
+          <MenuButton label="Титры" onClick={() => openSheet('credits')} />
+          <MenuButton
+            label="Позвать друга"
+            onClick={() => {
+              hapticImpact('light');
+              shareInvite(player.id ? `ref_${player.id}` : 'invite');
+            }}
+          />
+        </div>
       </div>
 
       <footer className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-[#5a6470]">
-        <span>v0.11.0 · stage 11</span>
+        <span>v0.12.0 · stage 12</span>
         <span>landscape only</span>
       </footer>
     </div>

@@ -44,3 +44,24 @@ test.describe('run progression and impact feedback', () => {
     expect(state.timeScale).toBeLessThanOrEqual(1);
   });
 });
+
+test.describe('Telegram chrome in a browser build', () => {
+  test('greets the player and offers an invite link', async ({ page }) => {
+    await page.goto('/?quality=low');
+    await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 20_000 });
+    // Outside Telegram (and with the mock env) there is no name: the neutral
+    // greeting must still render, not an empty line.
+    await expect(page.getByTestId('menu-greeting')).not.toBeEmpty();
+    await expect(page.getByTestId('menu-Позвать друга')).toBeVisible();
+  });
+
+  test('settings state where progress is stored', async ({ page }) => {
+    await page.goto('/?quality=low');
+    await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId('menu-Настройки').click();
+    // A plain browser has no CloudStorage: the sheet must say so instead of
+    // pretending the progress is backed up.
+    await expect(page.getByTestId('cloud-status')).toHaveAttribute('data-cloud', 'off');
+    await expect(page.getByTestId('cloud-status')).toContainText('только на этом устройстве');
+  });
+});

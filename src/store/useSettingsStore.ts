@@ -3,6 +3,7 @@ import type { QualityLevel } from '@/types/engine';
 import { configureHaptics } from '@/telegram/haptic';
 import { SettingsRepository } from '@/db/repository';
 import { audio } from '@/game/audio';
+import { loadMirrored, mirror } from '@/telegram/cloudSync';
 
 export type ButtonScale = 'S' | 'M' | 'L';
 export type Handedness = 'right' | 'left';
@@ -88,7 +89,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()((set, 
     const { cameraSensitivity, buttonScale, handedness, autoAttack, hudOpacity, hapticsEnabled,
       hapticIntensity, quality, invertCameraY, soundEnabled, sfxVolume, musicVolume,
       onboardingDone } = get();
-    void repository.set(STORAGE_KEY, {
+    const payload = {
       cameraSensitivity,
       buttonScale,
       handedness,
@@ -102,7 +103,11 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()((set, 
       sfxVolume,
       musicVolume,
       onboardingDone,
-    });
+    };
+    void repository.set(STORAGE_KEY, payload);
+    // Settings are cheap to mirror and the most annoying thing to lose (sound,
+    // camera sensitivity), so they go to Telegram CloudStorage as well.
+    void mirror(STORAGE_KEY, payload);
   };
 
   const update = (patch: Partial<SettingsState>): void => {
@@ -129,7 +134,9 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()((set, 
     setOnboardingDone: (onboardingDone) => update({ onboardingDone }),
 
     hydrate: async () => {
-      const stored = await repository.get<Partial<SettingsState>>(STORAGE_KEY, {});
+      // `null` means "nothing stored"; only then is the cloud copy consulted.
+      const restored = await loadMirrored<Partial<SettingsState> | null>(repository, STORAGE_KEY, null);
+      const stored = restored.value ?? {};
       const merged: SettingsState = { ...DEFAULT_SETTINGS, ...stored };
       set({
         ...merged,

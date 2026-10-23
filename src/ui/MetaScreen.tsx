@@ -5,7 +5,7 @@ import { META_STORE_ID, useMetaStore } from '@/store/useMetaStore';
 import { META_CURRENCY } from '@/game/meta/MetaState';
 import { hapticImpact } from '@/telegram/haptic';
 import { audio } from '@/game/audio';
-import { hideBackButton } from '@/telegram/buttons';
+import { useBackButton } from '@/telegram/useBackButton';
 
 interface UpgradeRowProps {
   readonly id: string;
@@ -101,9 +101,12 @@ export function MetaScreen({ onBack }: { readonly onBack: () => void }): ReactEl
   const [, invalidate] = useReducer((version: number) => version + 1, 0);
 
   useEffect(() => {
-    hideBackButton();
     if (!loaded) void hydrate();
   }, [loaded, hydrate]);
+
+  // The altar has its own "Назад", so the native arrow mirrors it instead of
+  // being hidden (a hidden arrow on the only exit looks like a dead end).
+  useBackButton(onBack);
 
   // Feedback lives next to the list so it is visible on a landscape phone
   // without covering the rows the player is deciding between.

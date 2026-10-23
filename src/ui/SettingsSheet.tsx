@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type { ReactElement } from 'react';
 import { Sheet } from './components/Sheet';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -7,6 +8,8 @@ import { gameHost } from '@/game/GameHost';
 import { useGameStore } from '@/store/useGameStore';
 import { QUALITY_PRESETS } from '@/game/core/Quality';
 import { audio } from '@/game/audio';
+import { useBackButton } from '@/telegram/useBackButton';
+import { cloudStatus } from '@/telegram/cloudStorage';
 
 interface Option<T extends string> {
   readonly value: T;
@@ -62,6 +65,10 @@ function Row({ title, children, hint }: { readonly title: string; readonly hint?
 /** Settings sheet — every control is ≥48 px and uses PointerEvents (no hover states). */
 export function SettingsSheet({ open, onClose }: { readonly open: boolean; readonly onClose: () => void }): ReactElement {
   const settings = useSettingsStore();
+  useBackButton(open ? onClose : null);
+  // Where the progress lives matters more inside Telegram than anywhere else:
+  // the WebView can be wiped, so the cloud mirror is the actual safety net.
+  const cloud = useMemo(() => cloudStatus(), []);
   const setQuality = useGameStore((state) => state.setQuality);
 
   const changeQuality = (quality: QualityPreference): void => {
@@ -76,6 +83,11 @@ export function SettingsSheet({ open, onClose }: { readonly open: boolean; reado
   return (
     <Sheet open={open} title="Настройки" onClose={onClose}>
       <div className="pb-2">
+        <p className="mb-3 text-[11px] text-[#5a6470]" data-testid="cloud-status" data-cloud={cloud.available ? 'on' : 'off'}>
+          {cloud.available
+            ? 'Прогресс дублируется в облако Telegram'
+            : `Прогресс только на этом устройстве${cloud.reason ? ` (${cloud.reason})` : ''}`}
+        </p>
         <Row title="Качество графики" hint={settings.quality === 'auto' ? 'авто по FPS' : QUALITY_PRESETS[settings.quality].label}>
           <Segmented<QualityPreference>
             label="Качество"

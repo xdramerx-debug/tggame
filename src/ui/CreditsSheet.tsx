@@ -1,8 +1,10 @@
 import type { ReactElement } from 'react';
 import { Sheet } from './components/Sheet';
+import { useBackButton } from '@/telegram/useBackButton';
 
 /** Credits sheet. Every asset is generated in-repo; external CC0 entries appear here. */
 export function CreditsSheet({ open, onClose }: { readonly open: boolean; readonly onClose: () => void }): ReactElement {
+  useBackButton(open ? onClose : null);
   return (
     <Sheet open={open} title="Титры" onClose={onClose}>
       <div className="space-y-4 pb-4 text-sm leading-relaxed text-[#c8ccd2]">

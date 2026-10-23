@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { motion } from 'framer-motion';
 import { hapticImpact } from '@/telegram/haptic';
 import { audio } from '@/game/audio';
+import { useBackButton } from '@/telegram/useBackButton';
 
 interface PauseOverlayProps {
   readonly open: boolean;
@@ -33,6 +34,8 @@ export function PauseOverlay({
   onSettings,
   onMenu,
 }: PauseOverlayProps): ReactElement | null {
+  // Native back arrow = "resume": leaving the run needs the explicit button.
+  useBackButton(open ? onResume : null);
   if (!open) return null;
   return (
     <motion.div

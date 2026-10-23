@@ -1,4 +1,5 @@
 import { MetaRepository } from '@/db/repository';
+import { loadMirrored, saveMirrored } from '@/telegram/cloudSync';
 import { MetaState } from './MetaState';
 import type { MetaSnapshot } from './MetaState';
 
@@ -34,7 +35,7 @@ export class MetaStorage {
   /** Reads the stored snapshot once; later calls are free. */
   async load(): Promise<MetaState> {
     if (this.loaded) return this.state;
-    const stored = await this.repository.get<MetaSnapshot | null>(STORAGE_KEY, null);
+    const stored = (await loadMirrored<MetaSnapshot | null>(this.repository, STORAGE_KEY, null)).value;
     // A purchase made while the read was in flight must not be rolled back by
     // the (older) stored snapshot.
     if (!this.dirty) this.state.restore(stored);
@@ -57,8 +58,15 @@ export class MetaStorage {
     return this.state;
   }
 
+  /**
+   * Writes the snapshot locally and mirrors it into Telegram CloudStorage.
+   *
+   * Embers are the one number a player would notice losing, and the cloud copy
+   * costs one bridge call per purchase — cheap enough to do synchronously with
+   * the local write instead of debouncing both.
+   */
   async save(): Promise<void> {
-    await this.repository.set(STORAGE_KEY, this.state.snapshot());
+    await saveMirrored(this.repository, STORAGE_KEY, this.state.snapshot());
   }
 }
 

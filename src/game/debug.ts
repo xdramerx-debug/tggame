@@ -36,7 +36,7 @@ declare global {
  */
 export function installDebugBridge(getState: () => DebugSnapshot | null): () => void {
   if (!import.meta.env.DEV) return () => undefined;
-  window.__TENEBRIS__ = { getState, version: '0.11.0' };
+  window.__TENEBRIS__ = { getState, version: '0.12.0' };
   return () => {
     if (window.__TENEBRIS__?.getState === getState) delete window.__TENEBRIS__;
   };
