@@ -189,6 +189,10 @@ class GameHost {
   }
 
   /** Dev-only: damage the player (used by the death-screen E2E path). */
+  debugGrantXp(amount: number): void {
+    this.engine?.debugGrantXp(amount);
+  }
+
   debugHurt(amount: number): void {
     this.engine?.debugHurt(amount);
   }
@@ -219,6 +223,7 @@ class GameHost {
       quality: engine.qualityLevel,
       fps: stats?.fps ?? 0,
       physicsSteps: engine.getPhysicsStepCount(),
+      timeScale: Math.round(engine.timeScale * 100) / 100,
       audio: audio.snapshot(),
     };
   }

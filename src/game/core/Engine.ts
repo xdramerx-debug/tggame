@@ -6,6 +6,7 @@ import type { InputAction, InteractionHint, MoveInput } from '@/input/types';
 import { cameraRelativeMove } from '@/input/movement';
 import { createRenderer, applyShadowPreset, resizeRenderer } from './Renderer';
 import { QualityController } from './Quality';
+import { HitStop } from '@/game/fx/HitStop';
 import { PerfMonitor } from './PerfMonitor';
 import { Loop } from './Loop';
 import { CameraRig } from './CameraRig';
@@ -88,6 +89,8 @@ export class Engine {
   private readonly loop = new Loop();
   private readonly perf: PerfMonitor;
   private readonly quality: QualityController;
+  /** Impact freeze: scales the simulation delta, never the camera delta. */
+  private readonly hitStop = new HitStop();
   private readonly raycaster = new Raycaster();
   private gameScene: GameScene | null = null;
   private readonly dungeonSceneSeed: number;
@@ -135,6 +138,11 @@ export class Engine {
 
   get qualityLevel(): QualityLevel {
     return this.quality.current;
+  }
+
+  /** Current simulation time scale (1 except during a hit-stop window). */
+  get timeScale(): number {
+    return this.hitStop.scale;
   }
 
   get isPaused(): boolean {
@@ -331,6 +339,11 @@ export class Engine {
     this.gameScene?.debugHurt?.(amount);
   }
 
+  /** Dev-only: grant run experience (`?xp=N`). */
+  debugGrantXp(amount: number): void {
+    this.gameScene?.debugGrantXp?.(amount);
+  }
+
   /** Dev-only: drop the player next to the boss arena (`?boss=1`). */
   debugBossArena(): void {
     const scene = this.gameScene;
@@ -391,9 +404,16 @@ export class Engine {
   private readonly tick = (dt: number, elapsed: number): void => {
     const scene = this.gameScene;
     if (!scene) return;
-    // Fixed-rate simulation first, then visuals on the raw frame delta.
-    this.physicsWorld?.step(dt);
-    scene.update(dt, elapsed);
+    // Hit-stop: combat asks for a few frames of slow motion on impact. The
+    // timer runs on the real delta, so the freeze always ends on time.
+    const requested = scene.consumeHitStop?.();
+    if (requested) this.hitStop.trigger(requested);
+    this.hitStop.update(dt);
+    const scale = this.hitStop.scale;
+    const simDt = dt * scale;
+    // Fixed-rate simulation first, then visuals on the (possibly slowed) delta.
+    this.physicsWorld?.step(simDt);
+    scene.update(simDt, elapsed);
     this.rig.setTarget(scene.followTarget);
     const shake = scene.shakeAmount ?? 0;
     if (shake > 0) {

@@ -71,7 +71,7 @@ export function DeathScreen({ summary, reward, onRestart, onAltar, onMenu }: Dea
         <Stat label="Убийств" value={String(summary.kills)} />
         <Stat label="Время" value={formatDuration(summary.seconds)} />
         <Stat label="Золото" value={String(summary.gold)} />
-        <Stat label="Опыт" value={String(summary.xp)} />
+        <Stat label="Уровень" value={`${summary.level ?? 1} · ${summary.xp} xp`} />
         <Stat label="Предметы" value={String(summary.items)} />
       </div>
 

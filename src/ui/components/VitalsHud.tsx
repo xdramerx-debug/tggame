@@ -15,6 +15,9 @@ export interface Vitals {
   readonly satiety: number;
   readonly hunger: 'fed' | 'hungry' | 'starving';
   readonly rations: number;
+  readonly level: number;
+  readonly xpInLevel: number;
+  readonly xpToNext: number;
   readonly dead: boolean;
 }
 
@@ -31,6 +34,9 @@ const INITIAL: Vitals = {
   satiety: 80,
   hunger: 'fed',
   rations: 1,
+  level: 1,
+  xpInLevel: 0,
+  xpToNext: 40,
   dead: false,
 };
 
@@ -63,6 +69,9 @@ export function useVitals(): Vitals {
         satiety: Math.round(scene.satiety ?? INITIAL.satiety),
         hunger: scene.hunger ?? 'fed',
         rations: scene.rations ?? 0,
+        level: scene.level ?? 1,
+        xpInLevel: scene.xpInLevel ?? 0,
+        xpToNext: scene.xpToNext ?? 0,
         dead: scene.dead ?? false,
       };
       setVitals((previous) => (sameVitals(previous, next) ? previous : next));
@@ -90,6 +99,8 @@ function sameVitals(a: Vitals, b: Vitals): boolean {
     a.satiety === b.satiety &&
     a.hunger === b.hunger &&
     a.rations === b.rations &&
+    a.level === b.level &&
+    a.xpInLevel === b.xpInLevel &&
     a.dead === b.dead
   );
 }

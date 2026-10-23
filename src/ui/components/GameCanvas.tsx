@@ -3,6 +3,13 @@ import type { ReactElement } from 'react';
 import { gameHost } from '@/game/GameHost';
 import { useGameStore } from '@/store/useGameStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { QUALITY_PRESETS } from '@/game/core/Quality';
+
+const LEVEL_LABEL = {
+  low: QUALITY_PRESETS.low.label,
+  medium: QUALITY_PRESETS.medium.label,
+  high: QUALITY_PRESETS.high.label,
+} as const;
 
 /**
  * The one and only WebGL canvas.
@@ -25,7 +32,14 @@ export function GameCanvas(): ReactElement {
     gameHost.setCallbacks({
       onProgress: (progress) => setProgress(progress),
       onStats: (stats) => setStats(stats),
-      onQualityChange: (level) => setQuality(level),
+      onQualityChange: (level) => {
+        setQuality(level);
+        // A silent downgrade looks like a bug ("why is it blurry?"). The toast
+        // is only shown when the change is automatic, i.e. not at boot.
+        if (useGameStore.getState().screen === 'game') {
+          showMessage(level === 'low' ? 'Качество снижено до низкого' : `Качество: ${LEVEL_LABEL[level]}`);
+        }
+      },
       onMessage: (message) => showMessage(message),
     });
   }, [setProgress, setStats, setQuality, showMessage]);

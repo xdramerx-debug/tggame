@@ -20,7 +20,7 @@ test.describe('procedural audio', () => {
     };
     expect(manifest.version).toBe(2);
     expect(manifest.sampleRate).toBe(22_050);
-    expect(manifest.audio.length).toBe(18);
+    expect(manifest.audio.length).toBe(19);
     expect(manifest.audio.map((entry) => entry.id)).toContain('ambience');
     expect(manifest.audio.every((entry) => entry.bytes > 0)).toBe(true);
   });
@@ -36,7 +36,7 @@ test.describe('procedural audio', () => {
     await bootIntoRun(page, { seed: 5150 });
     const state = await readState(page);
     expect(state.audio?.ready).toBe(true);
-    expect(state.audio?.total).toBe(18);
+    expect(state.audio?.total).toBe(19);
     expect(state.audio?.enabled).toBe(true);
     expect(failures, `audio requests failed: ${failures.join(', ')}`).toHaveLength(0);
   });

@@ -64,6 +64,12 @@ export interface DebugSceneSnapshot {
   readonly chestsOpened?: number;
   /** Experience earned from kills this run. */
   readonly xp?: number;
+  /** Character level inside the run (1-based, resets every run). */
+  readonly level?: number;
+  /** XP banked inside the current level. */
+  readonly xpInLevel?: number;
+  /** XP needed to reach the next level (0 at the cap). */
+  readonly xpToNext?: number;
   /** Player deaths this run (respawns at the entrance until stage 8). */
   readonly deaths?: number;
   /** Living enemies currently instantiated around the player. */
@@ -76,6 +82,7 @@ export interface RunSummaryLike {
   readonly kills: number;
   readonly gold: number;
   readonly xp: number;
+  readonly level: number;
   readonly items: number;
   readonly seconds: number;
   readonly cause: 'combat' | 'starvation' | 'victory';
@@ -115,6 +122,8 @@ export interface GameScene {
   getSummary?(): RunSummaryLike | null;
   /** Dev-only: apply direct damage (survival/death QA). */
   debugHurt?(amount: number): void;
+  /** Dev-only: bank experience, bypassing combat (`?xp=N` level-up QA). */
+  debugGrantXp?(amount: number): void;
   /** Dev-only: arena position of the floor's boss (null without one). */
   debugBossPosition?(): { x: number; z: number } | null;
   /** Moves the player instantly (QA hooks, floor saves). */
@@ -137,6 +146,8 @@ export interface GameScene {
   readonly shakeAmount?: number;
   /** Clears the accumulated shake once the camera rig has applied it. */
   consumeShake?(): void;
+  /** Impact freeze requested by combat; the engine owns the slowed clock. */
+  consumeHitStop?(): { readonly durationSec: number; readonly scale: number } | null;
   /** Plain inventory snapshot for the HUD panel. */
   getInventorySnapshot?(): unknown;
   /** Equips a bag item (uid from the inventory snapshot). */

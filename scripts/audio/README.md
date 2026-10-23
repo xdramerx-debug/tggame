@@ -27,7 +27,7 @@
 | `reverb` | feedback comb — короткий «каменный» хвост подземелья |
 | `normalize` / `fadeEdges` / `mixInto` | уровень, края, наложение слоёв |
 
-`sfx.ts` — каталог `SOUNDS` (18 записей: `id`, `file`, `category`,
+`sfx.ts` — каталог `SOUNDS` (19 записей: `id`, `file`, `category`,
 `durationSec`, `peak`, `build`). Это **единственный** источник правды для
 байтов; рантайм-зеркало (`src/game/audio/soundSet.ts`) добавляет только
 микс-политику (gain, retrigger, rate jitter).
@@ -44,7 +44,7 @@
 ```
 
 Бюджет — **600 kB** на все звуки (guard в `build-assets.ts`, проверка в
-`tests/unit/audioSynth.test.ts`). Текущий размер — 481 kB.
+`tests/unit/audioSynth.test.ts`). Текущий размер — 508 kB.
 
 ## Рантайм
 

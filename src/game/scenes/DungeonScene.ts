@@ -56,6 +56,9 @@ import { NO_BONUSES } from '@/game/player/PlayerStats';
 import type { SoundId } from '@/game/audio/soundSet';
 import { STEP_DISTANCE } from '@/game/audio/soundSet';
 import { HitEffects } from '@/game/visual/HitEffects';
+import { LevelTrack } from '@/game/player/LevelTrack';
+import { HIT_STOP } from '@/game/fx/HitStop';
+import type { HitStopStrength } from '@/game/fx/HitStop';
 import { DamageNumbers } from '@/game/visual/DamageNumbers';
 import { PlayerStats, PLAYER_BASE } from '@/game/player/PlayerStats';
 import { PLAYER_ARC, targetsInArc } from '@/game/combat/meleeArc';
@@ -92,6 +95,8 @@ export interface RunSummary {
   readonly kills: number;
   readonly gold: number;
   readonly xp: number;
+  /** Character level reached at the end of the run. */
+  readonly level: number;
   readonly items: number;
   readonly seconds: number;
   readonly cause: 'combat' | 'starvation' | 'victory';
@@ -176,6 +181,10 @@ export class DungeonScene implements GameScene {
   private boss: Enemy | null = null;
   private bossPhase = 0;
   private bossKilled = false;
+  /** Per-run experience: levels are temporary, embers are permanent. */
+  private readonly levels = new LevelTrack();
+  /** Impact freeze requested by combat, consumed by the engine this frame. */
+  private pendingHitStop: HitStopStrength | null = null;
   /** Metres walked since the last footstep cue. */
   private stepDistance = 0;
   private readonly doorOpenState = new WeakMap<object, boolean>();
@@ -367,6 +376,9 @@ export class DungeonScene implements GameScene {
       maxStamina: this.vitals.maxStamina,
       kills: this.kills,
       xp: this.run.xp,
+      xpInLevel: this.levels.xpInLevel,
+      xpToNext: this.levels.requirement,
+      level: this.levels.level,
       gold: this.run.gold,
       items: this.run.inventory.size,
       weapon: this.run.inventory.equipped.weapon?.defId ?? null,
@@ -393,6 +405,9 @@ export class DungeonScene implements GameScene {
     // One slot is reserved for the exit rune light, which turns on near the stairs.
     this.lights?.setBudget(this.roomLightBudget(preset));
     this.mesh?.setQuality(preset);
+    // Particles are the first thing to go on a weak phone: fewer sparks, same
+    // silhouette of feedback (the numbers, the shake and the sound stay).
+    this.hitEffects.setBudget(preset.particleRatio);
   }
 
   fixedUpdate(step: number): void {
@@ -510,6 +525,26 @@ export class DungeonScene implements GameScene {
     this.root.clear();
   }
 
+  /**
+   * Combat asks for a short impact freeze; the engine owns the clock.
+   *
+   * Same shape as camera shake: the scene never touches time, it only says
+   * "that hit was heavy". Two hits in one frame keep the stronger request.
+   */
+  private requestHitStop(strength: HitStopStrength): void {
+    const pending = this.pendingHitStop;
+    if (!pending || strength.scale < pending.scale || strength.durationSec > pending.durationSec) {
+      this.pendingHitStop = strength;
+    }
+  }
+
+  /** Drains the pending hit-stop request (engine, once per frame). */
+  consumeHitStop(): HitStopStrength | null {
+    const request = this.pendingHitStop;
+    this.pendingHitStop = null;
+    return request;
+  }
+
   /** One-line funnel so a missing audio layer can never throw mid-frame. */
   private sound(id: SoundId): void {
     this.options.onSound?.(id);
@@ -621,7 +656,24 @@ export class DungeonScene implements GameScene {
   }
 
   private combinedBonuses(): StatBonuses {
-    return addBonuses(this.metaBonuses, this.run.inventory.totals());
+    // Three additive sources, one merge point: meta upgrades, gear, run levels.
+    return addBonuses(addBonuses(this.metaBonuses, this.run.inventory.totals()), this.levels.bonuses());
+  }
+
+  /**
+   * Feeds experience into the run's level track.
+   *
+   * A level-up has to feel instant: the new max HP arrives filled (the player
+   * just survived a fight, they should not have to heal into it), the damage
+   * bonus applies immediately, and the HUD banner names the level.
+   */
+  private grantXp(amount: number): void {
+    const result = this.levels.addXp(amount);
+    if (!result.leveledUp) return;
+    this.applyEquipment();
+    this.sound('level-up');
+    this.options.onHaptic?.('medium');
+    this.options.onNotify?.(`Уровень ${result.level} · +${Math.round(this.levels.perLevel.maxHp)} HP`);
   }
 
   /** Applies freshly bought meta upgrades (called between runs). */
@@ -831,11 +883,13 @@ export class DungeonScene implements GameScene {
       );
       this.options.onHaptic?.(roll.critical ? 'medium' : 'light');
       this.sound(roll.critical ? 'crit' : 'hit');
+      this.requestHitStop(result.killed || roll.critical ? HIT_STOP.critical : HIT_STOP.light);
 
       if (result.killed) {
         this.sound('enemy-death');
         this.kills += 1;
         this.run.addXp(enemy.definition.xp);
+        this.grantXp(enemy.definition.xp);
         this.director?.markKilled(enemy.id);
         const gain = this.run.lootMonster(this.dungeon.floor, Math.random);
         if (gain.items.length > 0) {
@@ -937,6 +991,7 @@ export class DungeonScene implements GameScene {
     this.shake(0.28);
     this.options.onHaptic?.('heavy');
     this.sound('hurt');
+    this.requestHitStop(HIT_STOP.heavy);
   }
 
   private hasLineOfSight(
@@ -985,6 +1040,7 @@ export class DungeonScene implements GameScene {
       kills: this.kills,
       gold: this.run.gold,
       xp: this.run.xp,
+      level: this.levels.level,
       items: this.run.inventory.size,
       seconds: Math.round(this.survival.elapsed),
       cause,
@@ -1041,6 +1097,8 @@ export class DungeonScene implements GameScene {
     this.vitals.reset();
     this.vitals.applyBonuses(this.combinedBonuses());
     this.survival.reset();
+    this.levels.reset();
+    this.pendingHitStop = null;
     this.lastHungerTier = this.survival.tier;
     this.hero.revive();
 
@@ -1186,11 +1244,17 @@ export class DungeonScene implements GameScene {
     this.options.onNotify?.(`${enemy.name} пробудился`);
     enemy.onPhaseChange = ({ index, taunt }) => {
       this.sound('boss-phase');
+      this.requestHitStop(HIT_STOP.phase);
       this.options.onNotify?.(taunt);
       this.options.onHaptic?.('heavy');
       this.shake(0.35);
       this.bossPhase = index + 1;
     };
+  }
+
+  /** Dev/test helper: banks experience and runs the level-up path. */
+  debugGrantXp(amount: number): void {
+    this.grantXp(amount);
   }
 
   /** Dev/test helper: wipes the current wave (also used by respawn). */

@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { AudioManager, DEFAULT_VOLUMES } from '@/game/audio/AudioManager';
 import type { AudioBackend } from '@/game/audio/AudioManager';
-import { SOUND_SPECS } from '@/game/audio/soundSet';
+import { SOUND_IDS, SOUND_SPECS } from '@/game/audio/soundSet';
 import type { SoundId } from '@/game/audio/soundSet';
 
 /**
@@ -51,6 +51,9 @@ class FakeBackend implements AudioBackend {
   }
 }
 
+/** Kept in one place so adding a cue is a one-line change in the test too. */
+const SOUND_IDS_COUNT = SOUND_IDS.length;
+
 function makeManager(): { manager: AudioManager; backend: FakeBackend; clock: { now: number } } {
   const clock = { now: 0 };
   const manager = new AudioManager(() => clock.now, () => 0.5);
@@ -70,7 +73,7 @@ describe('AudioManager', () => {
 
   it('preloads every sound from the base URL', () => {
     manager.preload('/assets/');
-    expect(backend.loaded.length).toBe(18);
+    expect(backend.loaded.length).toBe(SOUND_IDS_COUNT);
     expect(backend.loaded[0]?.src.startsWith('/assets/audio/')).toBe(true);
     expect(backend.loaded.filter((entry) => entry.loop).map((entry) => entry.id)).toEqual(['ambience']);
   });
@@ -143,7 +146,7 @@ describe('AudioManager', () => {
     manager.playSound('crit');
     const snapshot = manager.snapshot();
     expect(snapshot.ready).toBe(true);
-    expect(snapshot.total).toBe(18);
+    expect(snapshot.total).toBe(SOUND_IDS_COUNT);
     expect(snapshot.plays).toBe(1);
     expect(snapshot.lastId).toBe('crit');
   });

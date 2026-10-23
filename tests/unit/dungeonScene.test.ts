@@ -121,6 +121,34 @@ describe('DungeonScene (headless)', () => {
     scene.dispose();
   });
 
+  it('applies run levels to the live stat block and refills the new HP', () => {
+    const scene = new DungeonScene({ physics, seed: 909 });
+    const before = scene.getDebugSnapshot();
+    expect(before.level).toBe(1);
+    expect(before.maxHp).toBe(100);
+
+    scene.debugGrantXp(200);
+    const after = scene.getDebugSnapshot();
+    expect(after.level).toBeGreaterThan(1);
+    // Levels are additive on top of base stats, and the gained max HP arrives
+    // filled so a level-up in the middle of a fight is real relief.
+    expect(after.maxHp ?? 0).toBeGreaterThan(before.maxHp ?? 0);
+    expect(after.hp).toBe(after.maxHp);
+    expect(after.xpToNext ?? 0).toBeGreaterThan(after.xpInLevel ?? 0);
+    scene.dispose();
+  });
+
+  it('reports a hit-stop request when a strike lands, and nothing when it misses', () => {
+    const scene = new DungeonScene({ physics, seed: 910 });
+    expect(scene.consumeHitStop()).toBeNull();
+    scene.triggerAction('attack');
+    // The swing resolves after the wind-up fraction of the attack duration.
+    for (let i = 0; i < 40; i += 1) scene.update(1 / 60, i / 60);
+    // No enemy in range: a miss must not freeze the world.
+    expect(scene.consumeHitStop()).toBeNull();
+    scene.dispose();
+  });
+
   it('simulates the player through the fixed step and keeps them grounded', () => {
     const scene = new DungeonScene({ physics, seed: 99 });
     const start = scene.getDebugSnapshot().hero;

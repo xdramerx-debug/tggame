@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import { gameHost } from '@/game/GameHost';
 import { installDebugBridge } from '@/game/debug';
-import { useGameStore } from '@/store/useGameStore';
+import { useGameStore, useUiStore } from '@/store/useGameStore';
 import { PerfOverlay } from './components/PerfOverlay';
 import { InputLayer } from '@/input';
 import type { InteractionHint } from '@/input/types';
@@ -12,6 +12,7 @@ import { DangerVignette, HealthBar, useVitals } from './components/VitalsHud';
 import { InventorySheet } from './InventorySheet';
 import { DeathScreen } from './DeathScreen';
 import { BossBar } from './components/BossBar';
+import { PauseOverlay } from './PauseOverlay';
 import { useMetaStore } from '@/store/useMetaStore';
 import type { RunSummary } from '@/game/scenes/DungeonScene';
 
@@ -89,8 +90,10 @@ export function GameScreen(): ReactElement {
   const interactionHint = useInteractionHint();
   const vitals = useVitals();
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [pauseOpen, setPauseOpen] = useState(false);
   const [death, setDeath] = useState<RunSummary | null>(null);
 
+  const openSettings = useUiStore((state) => state.openSheet);
   const grantRun = useMetaStore((state) => state.grantRun);
   const reward = useMetaStore((state) => state.lastReward);
 
@@ -124,6 +127,22 @@ export function GameScreen(): ReactElement {
     if (!import.meta.env.DEV) return;
     const params = new URLSearchParams(window.location.search);
     gameHost.setPhysicsDebug(params.get('physics') === '1');
+    // `?xp=120` banks experience so the level-up banner and XP bar are reachable
+    // without fighting two floors' worth of monsters. The scene is built after
+    // boot, so the grant retries until the level actually moves.
+    const requestedXp = Number.parseInt(params.get('xp') ?? '', 10);
+    if (Number.isFinite(requestedXp) && requestedXp > 0) {
+      const xpTimer = window.setInterval(() => {
+        gameHost.debugGrantXp(requestedXp);
+        const level = gameHost.getDebugSnapshot()?.scene.level ?? 1;
+        if (level > 1) window.clearInterval(xpTimer);
+      }, 250);
+      const stopXp = window.setTimeout(() => window.clearInterval(xpTimer), 6000);
+      return () => {
+        window.clearInterval(xpTimer);
+        window.clearTimeout(stopXp);
+      };
+    }
     if (params.get('dummy') === '1') gameHost.spawnDummy();
     // `?boss=1` walks the player into the arena: the boss bar and phase changes
     // are then reachable without clearing two floors first.
@@ -180,9 +199,24 @@ export function GameScreen(): ReactElement {
 
   const pauseToMenu = (): void => {
     hapticImpact('light');
+    setPauseOpen(false);
     gameHost.setMoveInput({ x: 0, y: 0, magnitude: 0 });
     gameHost.pause();
     setScreen('menu');
+  };
+
+  // The pause button freezes the run instead of dropping straight to the menu:
+  // losing a twenty-minute run to a mis-tap on ☰ is not a difficulty curve.
+  const openPause = (): void => {
+    hapticImpact('light');
+    setPauseOpen(true);
+    gameHost.setMoveInput({ x: 0, y: 0, magnitude: 0 });
+    gameHost.pause();
+  };
+
+  const closePause = (): void => {
+    setPauseOpen(false);
+    gameHost.resume();
   };
 
   return (
@@ -192,6 +226,7 @@ export function GameScreen(): ReactElement {
       {death ? null : <InputLayer interactionHint={interactionHint} />}
 
       <div className="pointer-events-none relative z-30 flex items-start justify-between p-3">
+        <div className="flex flex-col gap-1">
         <div className="hud-panel flex flex-col gap-1.5 px-2.5 py-2" style={{ opacity: 'var(--hud-opacity)' }}>
           <Bar label="HP" value={vitals.hp} max={vitals.maxHp} color="linear-gradient(90deg,#7d1f1f,#b33a3a)" />
           <Bar label="ST" value={vitals.stamina} color="linear-gradient(90deg,#2f5c52,#4a7c8c)" />
@@ -205,7 +240,9 @@ export function GameScreen(): ReactElement {
             }
           />
           <div className="mt-0.5 flex items-center gap-2">
-            <span className="text-[11px] font-semibold text-gold">Lv.1</span>
+            <span className="text-[11px] font-semibold text-gold" data-testid="level-label" data-level={vitals.level}>
+              Lv.{vitals.level}
+            </span>
             <span className="text-[10px] uppercase tracking-widest text-[#5a6470]" data-testid="floor-label">
               Этаж {vitals.floor}
             </span>
@@ -218,13 +255,27 @@ export function GameScreen(): ReactElement {
           </div>
         </div>
 
+        {/* Run level: a thin bar under the panel, no layout shift on level-up. */}
+        <div className="h-1 w-full overflow-hidden rounded-full bg-black/70" aria-label="Опыт">
+          <div
+            className="h-full bg-gradient-to-r from-[#6b4e2e] to-gold transition-[width] duration-200"
+            style={{
+              width: `${vitals.xpToNext > 0 ? Math.min(100, Math.round((vitals.xpInLevel / vitals.xpToNext) * 100)) : 100}%`,
+            }}
+            data-testid="xp-fill"
+            data-xp={vitals.xpInLevel}
+            data-xp-to-next={vitals.xpToNext}
+          />
+        </div>
+        </div>
+
         <div className="pointer-events-auto flex gap-2">
           <button
             type="button"
             className="hud-panel flex h-[48px] w-[48px] items-center justify-center text-lg active:scale-95"
             aria-label="Меню"
             onPointerDown={() => hapticImpact('light')}
-            onClick={pauseToMenu}
+            onClick={openPause}
             data-testid="pause-button"
           >
             ☰
@@ -265,6 +316,15 @@ export function GameScreen(): ReactElement {
       </div>
 
       <BossBar />
+      <PauseOverlay
+        open={pauseOpen && death === null}
+        floor={vitals.floor}
+        level={vitals.level}
+        kills={vitals.kills}
+        onResume={closePause}
+        onSettings={() => openSettings('settings')}
+        onMenu={pauseToMenu}
+      />
       <InventorySheet open={inventoryOpen} onClose={closeInventory} />
       {death ? (
         <DeathScreen
@@ -288,7 +348,7 @@ export function GameScreen(): ReactElement {
 
       <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+6px)] z-0 flex justify-center">
         <p className="hud-panel hud-outline px-3 py-1 text-center text-[11px] leading-snug text-[#9aa3ae]">
-          Этап 10 · звук · ?seed=42 · ?quality=low
+          Этап 11 · полировка · ?seed=42 · ?xp=120
         </p>
       </div>
     </div>

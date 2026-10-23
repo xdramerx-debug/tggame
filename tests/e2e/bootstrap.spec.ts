@@ -72,13 +72,27 @@ test.describe('TENEBRIS bootstrap', () => {
       .toBeGreaterThan(0);
   });
 
-  test('pauses back to the menu without errors', async ({ page }) => {
+  test('pauses, resumes and only then returns to the menu', async ({ page }) => {
     await page.goto('/?quality=low');
     await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 15_000 });
     await page.getByTestId('menu-Начать забег').click();
     await expect(page.getByTestId('game-canvas')).toBeVisible();
 
+    // The first tap must freeze the run, not throw it away.
     await page.getByTestId('pause-button').tap();
+    await expect(page.getByTestId('pause-overlay')).toBeVisible();
+    await expect(page.getByTestId('main-menu')).toBeHidden();
+
+    const frozen = await page.evaluate(() => window.__TENEBRIS__?.getState()?.physicsSteps ?? 0);
+    await page.waitForTimeout(600);
+    const stillFrozen = await page.evaluate(() => window.__TENEBRIS__?.getState()?.physicsSteps ?? 0);
+    expect(stillFrozen).toBe(frozen);
+
+    await page.getByTestId('pause-resume').tap();
+    await expect(page.getByTestId('pause-overlay')).toBeHidden();
+
+    await page.getByTestId('pause-button').tap();
+    await page.getByTestId('pause-menu').tap();
     await expect(page.getByTestId('main-menu')).toBeVisible();
   });
 

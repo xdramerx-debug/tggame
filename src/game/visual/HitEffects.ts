@@ -35,6 +35,8 @@ export class HitEffects {
   private readonly bloodMesh: InstancedMesh;
   private readonly particles: Particle[] = [];
   private readonly poolSize: number;
+  /** Share of the particle budget the current quality tier allows (0…1). */
+  private budget = 1;
   private readonly matrix = new Matrix4();
   private readonly quaternion = new Quaternion();
   private readonly scale = new Vector3();
@@ -71,9 +73,14 @@ export class HitEffects {
     return this.particles.length;
   }
 
+  /** Applies the tier's particle budget (low tier: ~40 % of the sparks). */
+  setBudget(ratio: number): void {
+    this.budget = Math.min(1, Math.max(0, ratio));
+  }
+
   /** Sparks for a sword hit; `strength` scales the spread and the count. */
   burst(position: { x: number; y: number; z: number }, strength = 1, tint: 'spark' | 'blood' = 'spark'): void {
-    const count = Math.min(10, Math.round(4 + strength * 4));
+    const count = Math.max(1, Math.round(Math.min(10, Math.round(4 + strength * 4)) * this.budget));
     for (let i = 0; i < count; i += 1) {
       if (this.particles.length >= this.poolSize * 2) break;
       const angle = Math.random() * Math.PI * 2;

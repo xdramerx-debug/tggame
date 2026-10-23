@@ -20,7 +20,7 @@ const MANIFEST = JSON.parse(readFileSync(join(PUBLIC, 'manifest.json'), 'utf8'))
  */
 describe('procedural audio', () => {
   it('renders every sound with a valid RIFF header and mono 22.05 kHz 16-bit PCM', () => {
-    expect(SOUNDS.length).toBeGreaterThanOrEqual(18);
+    expect(SOUNDS.length).toBeGreaterThanOrEqual(19);
     for (const sound of SOUNDS) {
       const bytes = encodeWav(renderSound(sound));
       const { info } = decodeWav(bytes);

@@ -22,6 +22,7 @@ export type SoundId =
   | 'descend'
   | 'boss-roar'
   | 'boss-phase'
+  | 'level-up'
   | 'victory'
   | 'death'
   | 'ambience';
@@ -57,6 +58,7 @@ export const SOUND_SPECS: Readonly<Record<SoundId, SoundSpec>> = {
   descend: { file: 'audio/descend.wav', group: 'sfx', gain: 0.8, retriggerMs: 1000 },
   'boss-roar': { file: 'audio/boss-roar.wav', group: 'sfx', gain: 0.9, retriggerMs: 3000 },
   'boss-phase': { file: 'audio/boss-phase.wav', group: 'sfx', gain: 0.9, retriggerMs: 2000 },
+  'level-up': { file: 'audio/level-up.wav', group: 'sfx', gain: 0.85, retriggerMs: 400 },
   victory: { file: 'audio/victory.wav', group: 'sfx', gain: 1, retriggerMs: 5000 },
   death: { file: 'audio/death.wav', group: 'sfx', gain: 1, retriggerMs: 5000 },
   ambience: { file: 'audio/ambience.wav', group: 'ambience', gain: 0.6, retriggerMs: 0, loop: true },

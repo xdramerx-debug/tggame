@@ -238,6 +238,21 @@ function ui(sampleRate: number): Float32Array {
   return normalize(fadeEdges(out, 0.001, sampleRate), 0.4);
 }
 
+function levelUp(sampleRate: number): Float32Array {
+  const out = buffer(0.62, sampleRate);
+  // A rising minor third, then the octave: readable as "stronger now" without
+  // turning into a victory jingle (the run is not over).
+  tone(out, { startHz: 330, gain: 0.32, durationSec: 0.14 }, sampleRate);
+  tone(out, { startHz: 392, gain: 0.3, durationSec: 0.14, offsetSec: 0.1 }, sampleRate);
+  tone(out, { startHz: 495, gain: 0.28, durationSec: 0.18, offsetSec: 0.2 }, sampleRate);
+  tone(out, { startHz: 660, gain: 0.24, durationSec: 0.34, offsetSec: 0.32 }, sampleRate);
+  // A whispered shimmer on top: the sound of the stat bump landing.
+  noise(out, { gain: 0.1, smoothing: 0.4, smoothingEnd: 0.85, rng: createRng(28), durationSec: 0.5, offsetSec: 0.2 }, sampleRate);
+  envelope(out, { attack: 0.01, decay: 0.62, curve: 1.3 }, sampleRate);
+  reverb(out, { delaySec: 0.05, feedback: 0.3, mix: 0.2 }, sampleRate);
+  return normalize(fadeEdges(out, 0.006, sampleRate), 0.8);
+}
+
 function ambience(sampleRate: number): Float32Array {
   const out = buffer(3.5, sampleRate);
   const rng = createRng(30);
@@ -280,6 +295,7 @@ export const SOUNDS: readonly SoundDefinition[] = [
   { id: 'boss-phase', file: 'audio/boss-phase.wav', category: 'sfx', durationSec: 0.65, peak: 0.9, build: bossPhase },
   { id: 'victory', file: 'audio/victory.wav', category: 'sfx', durationSec: 1.2, peak: 0.85, build: victory },
   { id: 'death', file: 'audio/death.wav', category: 'sfx', durationSec: 1.3, peak: 0.85, build: death },
+  { id: 'level-up', file: 'audio/level-up.wav', category: 'sfx', durationSec: 0.62, peak: 0.8, build: levelUp },
   { id: 'ambience', file: 'audio/ambience.wav', category: 'ambience', durationSec: 3.2, peak: 0.5, build: ambience },
 ];
 

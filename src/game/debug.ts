@@ -12,6 +12,8 @@ export interface DebugSnapshot {
   readonly fps: number;
   /** Fixed physics steps executed since boot (proves the simulation advances). */
   readonly physicsSteps: number;
+  /** Simulation time scale (1 unless a hit-stop is running). */
+  readonly timeScale: number;
   /** Audio subsystem state: mixer readiness, last cue, volumes. */
   readonly audio: AudioDebugSnapshot;
 }
@@ -34,7 +36,7 @@ declare global {
  */
 export function installDebugBridge(getState: () => DebugSnapshot | null): () => void {
   if (!import.meta.env.DEV) return () => undefined;
-  window.__TENEBRIS__ = { getState, version: '0.10.0' };
+  window.__TENEBRIS__ = { getState, version: '0.11.0' };
   return () => {
     if (window.__TENEBRIS__?.getState === getState) delete window.__TENEBRIS__;
   };

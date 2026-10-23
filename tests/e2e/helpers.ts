@@ -31,6 +31,8 @@ export interface DebugState {
   readonly quality: string;
   readonly fps: number;
   readonly physicsSteps: number;
+  /** Simulation scale: 1 except during a hit-stop window. */
+  readonly timeScale?: number;
   readonly audio?: {
     readonly enabled: boolean;
     readonly ready: boolean;
