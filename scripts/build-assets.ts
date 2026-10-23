@@ -18,6 +18,7 @@
  *   npm run assets -- --out=dist-assets
  */
 import { mkdir, writeFile } from 'node:fs/promises';
+import { buildIcons } from './icon';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildHero, HERO_CLIPS } from './models/hero';
@@ -144,15 +145,35 @@ async function buildAudio(only: readonly string[], outDir: string): Promise<Audi
   return reports;
 }
 
+/**
+ * Draws the app icons (PWA manifest + home screen).
+ *
+ * Icons are code too: no binary blob in git, no design tool in the loop, and a
+ * palette change propagates the next time assets are built.
+ */
+async function buildIconSet(outDir: string): Promise<{ file: string; bytes: number }[]> {
+  const artifacts = buildIcons();
+  for (const artifact of artifacts) {
+    const file = join(outDir, artifact.file);
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, artifact.bytes);
+    console.log(`  ${artifact.file.padEnd(30)} ${(artifact.bytes.byteLength / 1024).toFixed(1).padStart(6)} kB  ${artifact.size}px`);
+  }
+  return artifacts.map((artifact) => ({ file: artifact.file, bytes: artifact.bytes.byteLength }));
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const wantsAudio = options.only.length === 0 || options.only.includes('audio');
-  const onlyModels = options.only.filter((item) => item !== 'audio');
+  const wantsIcons = options.only.length === 0 || options.only.includes('icons');
+  const onlyModels = options.only.filter((item) => item !== 'audio' && item !== 'icons');
   const selected =
     options.only.length === 0
       ? MODELS
       : MODELS.filter((model) => onlyModels.includes(model.id) || onlyModels.includes(model.name));
-  if (selected.length === 0 && !wantsAudio) throw new Error(`no assets matched --only=${options.only.join(',')}`);
+  if (selected.length === 0 && !wantsAudio && !wantsIcons) {
+    throw new Error(`no assets matched --only=${options.only.join(',')}`);
+  }
 
   const startedAt = Date.now();
   const reports: AssetReport[] = [];
@@ -166,6 +187,7 @@ async function main(): Promise<void> {
   }
 
   const audio = wantsAudio ? await buildAudio(options.only, options.outDir) : [];
+  const icons = wantsIcons ? await buildIconSet(options.outDir) : [];
 
   const manifest = {
     generator: 'scripts/build-assets.ts',
@@ -179,6 +201,7 @@ async function main(): Promise<void> {
       clips: report.clips,
     })),
     audio,
+    icons: icons.map((icon) => ({ ...icon, file: icon.file })),
   };
   await mkdir(options.outDir, { recursive: true });
   await writeFile(join(options.outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -191,6 +214,7 @@ async function main(): Promise<void> {
   console.log(
     `\n${reports.length} model(s) ${(modelBytes / 1024).toFixed(1)} kB + ` +
       `${audio.length} sound(s) ${(audioBytes / 1024).toFixed(1)} kB, ` +
+      `${icons.length} icon(s), ` +
       `${Date.now() - startedAt} ms → ${options.outDir}`,
   );
 }
