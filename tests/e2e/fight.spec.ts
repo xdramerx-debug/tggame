@@ -111,6 +111,21 @@ test('the fight runs on a fixed tick and the timer counts down', async ({ page, 
   expect(value).toBeGreaterThan(48);
 });
 
+test('the 3D pit is actually drawn, not a black canvas', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit', NO_WEBGL);
+
+  await page.getByTestId('menu-start').tap();
+  await page.getByTestId('select-start').tap();
+  await expect(page.getByTestId('fight-canvas')).toBeVisible();
+  await page.waitForTimeout(1500);
+
+  // A black or empty canvas compresses to a couple of kilobytes; a lit scene
+  // with two fighters, sparks and the quarry wall does not. Cheap guard against
+  // a silently broken renderer that still passes the WebGL-context check.
+  const shot = await page.screenshot();
+  expect(shot.byteLength).toBeGreaterThan(24_000);
+});
+
 test('no horizontal overflow on the menu', async ({ page }) => {
   const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   expect(fits).toBe(true);
