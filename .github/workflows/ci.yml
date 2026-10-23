@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [android-chrome-landscape, ios-webkit-landscape]
+        project: [android-chrome-mobile, ios-webkit-mobile]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -2,9 +2,8 @@
 /**
  * Bundle budget gate.
  *
- * FREAKPIT targets phones on cellular inside a Telegram WebView, so the whole
- * app (Three.js included) has to stay under budget. The check measures gzip
- * size of the built assets, which is what actually travels over the network.
+ * Astral Legion targets mobile browsers and Telegram WebViews over cellular,
+ * keeping total gzipped bundle payload lean and instant to load.
  */
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';

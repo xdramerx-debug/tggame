@@ -1,9 +1,9 @@
 {
-  "name": "freakpit",
+  "name": "astral-legion",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
-  "description": "FREAKPIT — mobile 3D fighting game for Telegram Mini Apps",
+  "description": "Астральный Легион — мобильная Web Idle RPG с авто-боями, призывом героев и прокачкой",
   "engines": {
     "node": ">=22.12"
   },
@@ -22,9 +22,9 @@
   "dependencies": {
     "@telegram-apps/sdk": "^3.11.8",
     "framer-motion": "^11.18.2",
+    "lucide-react": "^1.16.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "three": "^0.186.1",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -32,7 +32,6 @@
     "@types/node": "^22.19.0",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
-    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.1.2",
     "autoprefixer": "^10.6.1",
     "eslint": "^9.39.5",

@@ -1,12 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
 
-/**
- * Mobile-only E2E configuration.
- *
- * Two device profiles (Android Chromium + iOS WebKit), both landscape: the game
- * refuses to run in portrait. SwiftShader flags keep WebGL deterministic on CI
- * runners without a GPU.
- */
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 60_000,
@@ -30,20 +23,16 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'android-chrome-landscape',
+      name: 'android-chrome-mobile',
       use: {
-        ...devices['Pixel 7 landscape'],
-        // Software rendering on CI: a 2.6x DPR canvas would crawl.
+        ...devices['Pixel 7'],
         deviceScaleFactor: 1,
-        launchOptions: {
-          args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-        },
       },
     },
     {
-      name: 'ios-webkit-landscape',
+      name: 'ios-webkit-mobile',
       use: {
-        ...devices['iPhone 13 landscape'],
+        ...devices['iPhone 13'],
         deviceScaleFactor: 1,
       },
     },

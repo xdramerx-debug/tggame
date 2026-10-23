@@ -1,4 +1,4 @@
-name: Deploy FREAKPIT
+name: Deploy Astral Legion
 
 on:
   push:
@@ -29,8 +29,6 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run check:dist
-      # The Pages site must be the built app, never the repo root: the root
-      # index.html points at /src/main.tsx and would show a blank boot shell.
       - name: Fail if the build is missing a real bundle
         run: |
           test -f dist/index.html

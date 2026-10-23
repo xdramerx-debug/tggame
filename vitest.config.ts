@@ -9,13 +9,12 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['tests/unit/**/*.test.ts'],
+    include: ['tests/unit/**/*.test.{ts,tsx}'],
     reporters: ['default'],
     coverage: {
       reporter: ['text', 'lcov'],
-      include: ['src/fight/**', 'src/characters/**'],
+      include: ['src/game/**'],
       thresholds: {
-        // The simulation is pure and must stay covered; rendering is E2E-tested.
         lines: 70,
         functions: 70,
       },

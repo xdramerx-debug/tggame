@@ -2,15 +2,6 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-/**
- * FREAKPIT build config.
- *
- * - `target: es2020` matches the browserslist baseline (iOS 15+, Chrome Android 100+).
- * - `base: './'` keeps relative URLs working inside the Telegram WebView and on
- *   GitHub Pages served from a sub-path.
- * - `allowedHosts: true` is required by the sandbox preview proxy and by the
- *   Telegram WebView host; there is no meaningful host allowlist on mobile.
- */
 export default defineConfig({
   base: './',
   plugins: [react()],
@@ -28,7 +19,8 @@ export default defineConfig({
       output: {
         manualChunks(id: string): string | undefined {
           if (!id.includes('node_modules')) return undefined;
-          if (id.includes('node_modules/three')) return 'three';
+          if (id.includes('framer-motion')) return 'motion';
+          if (id.includes('lucide-react')) return 'icons';
           if (id.includes('node_modules/react')) return 'react';
           if (id.includes('@telegram-apps')) return 'telegram';
           return undefined;

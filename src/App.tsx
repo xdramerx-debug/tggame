@@ -1,87 +1,93 @@
-import { useEffect } from 'react';
-import type { ReactElement } from 'react';
-import { useGame } from '@/state/store';
-import { sfx } from '@/audio/sfx';
-import { initTelegram, lockLandscape } from '@/platform/telegram';
-import { keepScreenAwake, allowScreenSleep } from '@/platform/wakeLock';
-import { MenuScreen } from '@/ui/MenuScreen';
-import { SelectScreen } from '@/ui/SelectScreen';
-import { FightScreen } from '@/ui/FightScreen';
-import { ResultScreen } from '@/ui/ResultScreen';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Coins, Gift, Sparkles } from 'lucide-react';
+import { playSfx } from '@/audio/sfx';
+import { BottomNav } from '@/components/BottomNav';
+import { FlyLootLayer } from '@/components/FlyLootLayer';
+import { TopBar } from '@/components/TopBar';
+import { formatCompactNumber } from '@/game/heroes';
+import { BattleScreen } from '@/screens/BattleScreen';
+import { HeroesScreen } from '@/screens/HeroesScreen';
+import { QuestsTowerScreen } from '@/screens/QuestsTowerScreen';
+import { SquadScreen } from '@/screens/SquadScreen';
+import { SummonScreen } from '@/screens/SummonScreen';
+import { useGameStore } from '@/state/gameStore';
 
-function OrientationGate(): ReactElement {
-  return (
-    <div className="orientation-gate absolute inset-0 z-50 flex-col items-center justify-center gap-4 bg-ink px-8 text-center">
-      <div className="h-16 w-28 rotate-90 rounded-md border-2 border-bone/30" />
-      <div className="font-display text-[22px] uppercase tracking-[0.12em] text-bone">поверни телефон</div>
-      <div className="max-w-[30ch] text-[13px] leading-snug text-bone/45">
-        Яма открывается только в горизонтали: двум большим пальцам нужно место.
-      </div>
-    </div>
-  );
-}
-
-export function App(): ReactElement {
-  const screen = useGame((state) => state.screen);
-  const sound = useGame((state) => state.sound);
-
-  useEffect(() => {
-    initTelegram();
-    keepScreenAwake();
-    void lockLandscape();
-
-    const unlockAudio = (): void => {
-      sfx.unlock();
-      if (useGame.getState().sound) sfx.startAmbience();
-    };
-    const blockContext = (event: Event): void => { event.preventDefault(); };
-    const blockGesture = (event: Event): void => { event.preventDefault(); };
-    const handleVisibility = (): void => {
-      if (document.visibilityState === 'hidden') {
-        sfx.suspend();
-      } else if (useGame.getState().sound) {
-        sfx.resume();
-      }
-    };
-    const handleResize = (): void => {
-      // 100dvh is handled by CSS; this forces a layout flush after rotation so
-      // the canvas never keeps the pre-rotation size.
-      document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
-    };
-
-    document.addEventListener('contextmenu', blockContext);
-    document.addEventListener('gesturestart', blockGesture);
-    window.addEventListener('pointerdown', unlockAudio, { passive: true });
-    document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('resize', handleResize);
-    handleResize();
-
-    return () => {
-      document.removeEventListener('contextmenu', blockContext);
-      document.removeEventListener('gesturestart', blockGesture);
-      window.removeEventListener('pointerdown', unlockAudio);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('resize', handleResize);
-      allowScreenSleep();
-      sfx.stopAmbience();
-      sfx.suspend();
-    };
-  }, []);
-
-  useEffect(() => {
-    sfx.setEnabled(sound);
-    if (sound) sfx.unlock();
-  }, [sound]);
+export function App() {
+  const activeTab = useGameStore((s) => s.activeTab);
+  const lootBurst = useGameStore((s) => s.lootBurst);
+  const offlineModalReward = useGameStore((s) => s.offlineModalReward);
+  const dismissOfflineModal = useGameStore((s) => s.dismissOfflineModal);
 
   return (
-    <div className="app-shell relative h-[100dvh] w-full overflow-hidden bg-ink text-bone">
-      <div key={screen} className="screen-enter absolute inset-0">
-        {screen === 'menu' && <MenuScreen />}
-        {screen === 'select' && <SelectScreen />}
-        {screen === 'fight' && <FightScreen />}
-        {screen === 'result' && <ResultScreen />}
-      </div>
-      <OrientationGate />
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-transparent text-white">
+      <TopBar />
+
+      <main className="relative flex-1 min-h-0 overflow-hidden">
+        <motion.div
+          key={activeTab}
+          initial={{ opacity: 0.78, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.16, ease: 'easeOut' }}
+          className="h-full w-full"
+        >
+          {activeTab === 'battle' && <BattleScreen />}
+          {activeTab === 'heroes' && <HeroesScreen />}
+          {activeTab === 'summon' && <SummonScreen />}
+          {activeTab === 'squad' && <SquadScreen />}
+          {activeTab === 'quests' && <QuestsTowerScreen />}
+        </motion.div>
+      </main>
+
+      <BottomNav />
+
+      <FlyLootLayer burst={lootBurst} />
+
+      {/* Welcome Back Offline AFK Loot Modal */}
+      <AnimatePresence>
+        {offlineModalReward && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.85, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-xs rounded-3xl border border-amber-400/45 bg-slate-900 p-5 text-center shadow-2xl"
+            >
+              <Gift className="mx-auto h-11 w-11 text-amber-400 animate-bounce" />
+              <h2 className="mt-2 text-lg font-black text-white">С возвращением!</h2>
+              <p className="mt-1 text-xs text-slate-300">
+                Ваш легион сражался {offlineModalReward.minutes} мин. без перерыва и собрал трофеи:
+              </p>
+
+              <div className="mt-3 flex justify-center gap-4 rounded-2xl bg-slate-950/85 p-3 text-sm font-black">
+                <span className="flex items-center gap-1 text-amber-300">
+                  <Coins className="h-4 w-4" />+
+                  {formatCompactNumber(offlineModalReward.gold)}
+                </span>
+                <span className="flex items-center gap-1 text-emerald-300">
+                  <Sparkles className="h-4 w-4" />+
+                  {formatCompactNumber(offlineModalReward.essence)}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  playSfx('coin');
+                  dismissOfflineModal();
+                }}
+                className="btn-gloss mt-4 w-full rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 py-3 text-xs font-black text-slate-950 shadow-lg active:scale-95"
+              >
+                Забрать добычу!
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
