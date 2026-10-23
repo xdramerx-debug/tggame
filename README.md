@@ -128,8 +128,9 @@ src/
 
 ## Деплой
 
-Сайт — статика: `npm run build` → `dist/`, публикация через ручной workflow
-«Deploy to GitHub Pages» (Pages → Source: GitHub Actions). Настройка бота,
+Сайт — статика: `npm run build` → `dist/`, публикация автоматическая — workflow
+«Deploy to GitHub Pages» срабатывает на push в ветку и публикует артефакт
+(Pages → Source: GitHub Actions нужен один раз). Настройка бота,
 Web App URL, инвайты и проверка после релиза — в [docs/DEPLOY.md](docs/DEPLOY.md).
 После выкладки: открыть игру в Telegram, включить полноэкранный режим и проверить,
 что в настройках написано «Прогресс дублируется в облако Telegram».

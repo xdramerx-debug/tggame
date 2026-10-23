@@ -32,6 +32,10 @@ jobs:
         run: npm run test
       - name: Production build
         run: npm run build
+      # Guards the failure that made the deployed site show only its splash:
+      # a page that still points at /src/ instead of the hashed bundle.
+      - name: Verify build output
+        run: npm run check:dist
       - name: Bundle budget (< 3 MB gzip)
         run: npm run size
       - name: Upload build artifact

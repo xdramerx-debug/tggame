@@ -1,20 +1,27 @@
 name: Deploy to GitHub Pages
 
-# Manual on purpose.
+# Publishes the built site (dist/) to GitHub Pages.
 #
-# The repository's Pages site is configured with the legacy "deploy from a
-# branch" source, and switching it to "GitHub Actions" needs repository admin
-# rights that CI does not have. Publishing the built site from a workflow into a
-# legacy site would fail on every push and turn the whole pipeline red, so the
-# release is an explicit action:
+# Two triggers on purpose:
 #
-#   1. Settings → Pages → Source: "GitHub Actions".
-#   2. Actions → "Deploy to GitHub Pages" → Run workflow.
+# - `push` to an arena branch. This is the one that actually works today: the
+#   repository default branch (`main`) is empty, and GitHub only exposes
+#   `workflow_dispatch` for workflows that exist on the default branch. A
+#   push-triggered workflow, on the other hand, is read from the branch being
+#   pushed — so the app deploys itself from the very commit that was tested.
+# - `workflow_dispatch`, kept for the day `main` carries the workflow; then a
+#   release becomes an explicit button instead of a side effect of a push.
 #
-# The job repeats the quality gates instead of trusting the previous run: a
+# The job repeats every quality gate instead of trusting the previous run: a
 # release must be built from a commit that is green *now*.
 on:
   workflow_dispatch:
+  push:
+    branches: ['arena/**']
+    # Docs-only commits cannot change the bundle: skip the rebuild.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
 
 permissions:
   contents: read
@@ -44,6 +51,8 @@ jobs:
       - run: npm run test
       - name: Production build
         run: npm run build
+      - name: Verify build output
+        run: npm run check:dist
       - name: Bundle budget
         run: npm run size
       - name: Report artifact size

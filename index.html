@@ -41,11 +41,87 @@
         color: #c9a227;
         text-transform: uppercase;
       }
+      /* Shown only when the bundle never boots (see the timeout below). */
+      #boot-failure {
+        max-width: 34ch;
+        padding: 0 16px;
+        text-align: center;
+        font: 400 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: #9aa3ae;
+      }
+      #boot-failure strong {
+        display: block;
+        margin-bottom: 6px;
+        font: 600 16px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: #e8e3d6;
+      }
+      #boot-failure button {
+        margin-top: 16px;
+        min-height: 48px;
+        padding: 0 28px;
+        border: 1px solid rgba(201, 162, 39, 0.8);
+        border-radius: 8px;
+        background: linear-gradient(180deg, rgba(201, 162, 39, 0.22), rgba(0, 0, 0, 0.65));
+        color: #c9a227;
+        font: 600 16px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
     </style>
   </head>
   <body>
     <div id="boot"><span>TENEBRIS</span></div>
     <div id="root"></div>
+    <script>
+      /*
+       * Boot watchdog.
+       *
+       * A static host can serve this HTML while the bundle next to it is
+       * missing (wrong Pages source, half-finished deploy, an aggressive
+       * WebView cache). Without this, the player stares at the title forever
+       * and cannot tell whether the game is loading or broken. The timer only
+       * fires if React never replaced the splash — `main.tsx` removes #boot
+       * synchronously on boot.
+       */
+      (function () {
+        var failure = null;
+        function showFailure(detail) {
+          if (failure || !document.getElementById('boot')) return;
+          var boot = document.getElementById('boot');
+          var box = document.createElement('div');
+          box.id = 'boot-failure';
+          var title = document.createElement('strong');
+          title.textContent = 'Игра не загрузилась';
+          var text = document.createElement('span');
+          text.textContent =
+            detail + ' Проверьте соединение и обновите страницу. Если не помогает — закройте и откройте игру заново из Telegram.';
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = 'Обновить';
+          button.addEventListener('click', function () {
+            window.location.reload();
+          });
+          box.appendChild(title);
+          box.appendChild(text);
+          box.appendChild(button);
+          boot.textContent = '';
+          boot.appendChild(box);
+          failure = box;
+        }
+        window.__tenebrisBootFailed = showFailure;
+        window.setTimeout(function () {
+          showFailure('Похоже, файлы игры не загрузились.');
+        }, 20000);
+        window.addEventListener(
+          'error',
+          function (event) {
+            var target = event.target;
+            if (target && target.tagName === 'SCRIPT') {
+              showFailure('Не удалось загрузить сборку игры.');
+            }
+          },
+          true,
+        );
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

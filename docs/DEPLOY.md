@@ -9,6 +9,7 @@ IndexedDB на устройстве и (опционально) в Telegram Clou
 npm ci
 npm run assets     # GLB-модели, WAV-звуки, PNG-иконки, manifest.json
 npm run build      # dist/
+npm run check:dist # dist/index.html грузит хэшированный бандл, все ссылки живы
 npm run size       # бюджет бандла (< 3 MB gzip)
 ```
 
@@ -27,17 +28,32 @@ npm run preview -- --port 4173
 
 ## 2. GitHub Pages
 
-Pages в репозитории настроены как **legacy** (публикация из ветки), а сборка
-лежит в `dist/`. Чтобы публиковать артефакт:
+1. Settings → Pages → **Source: GitHub Actions** (один раз, руками).
+2. Дальше публикация идёт сама: `.github/workflows/deploy.yml` запускается на
+   **push в ветку `arena/**`**, повторяет typecheck/tests/build/size и заливает
+   `dist/` как артефакт Pages.
 
-1. Settings → Pages → **Source: GitHub Actions**.
-2. Actions → **Deploy to GitHub Pages** → *Run workflow*.
+Почему по push, а не кнопкой: `workflow_dispatch` GitHub открывает только для
+workflow, который есть в **дефолтной ветке**, а `main` в этом репозитории пустой
+— кнопки «Run workflow» просто нет. Push-триггер читается из той ветки, куда
+пушат, поэтому деплой работает с текущей и не требует прав администратора на
+переключение источника Pages.
 
-Workflow `.github/workflows/deploy.yml` намеренно ручной: он повторяет
-typecheck/tests/build/size и только потом публикует. Так релиз не может
-разъехаться с зелёным CI, а неудачная попытка публикации не красит ветку.
+Если `main` когда-нибудь наполнят приложением, кнопка появится сама —
+`workflow_dispatch` в файле уже объявлен, и релиз можно будет делать вручную.
 
-URL сайта: `https://<owner>.github.io/<repo>/`.
+URL сайта: `https://<owner>.github.io/<repo>/` (у этого репозитория —
+`https://xdramerx-debug.github.io/tggame/`).
+
+### Частая ошибка: «висит заставка TENEBRIS»
+
+Это значит, что хостинг отдаёт **исходный** `index.html` из корня ветки, а не
+собранный из `dist/`: такой файл грузит `/src/main.tsx`, которого в продакшене
+нет, поэтому React никогда не стартует. Проверка — открыть
+`https://<owner>.github.io/<repo>/manifest.webmanifest`: если 404, деплой не
+прошёл. Лечится запуском workflow «Deploy to GitHub Pages» (раздел 2).
+Начиная с v1.0.0 страница сама через 20 секунд показывает «Игра не загрузилась» с
+кнопкой «Обновить» вместо бесконечной заставки.
 
 ## 3. Telegram
 
