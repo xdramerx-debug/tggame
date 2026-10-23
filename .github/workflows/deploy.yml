@@ -1,0 +1,65 @@
+name: Deploy to GitHub Pages
+
+# Manual on purpose.
+#
+# The repository's Pages site is configured with the legacy "deploy from a
+# branch" source, and switching it to "GitHub Actions" needs repository admin
+# rights that CI does not have. Publishing the built site from a workflow into a
+# legacy site would fail on every push and turn the whole pipeline red, so the
+# release is an explicit action:
+#
+#   1. Settings → Pages → Source: "GitHub Actions".
+#   2. Actions → "Deploy to GitHub Pages" → Run workflow.
+#
+# The job repeats the quality gates instead of trusting the previous run: a
+# release must be built from a commit that is green *now*.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Assets (GLB, WAV, PNG icons) are generated, never committed.
+      - name: Generate assets
+        run: npm run assets
+      - run: npm run typecheck
+      - run: npm run test
+      - name: Production build
+        run: npm run build
+      - name: Bundle budget
+        run: npm run size
+      - name: Report artifact size
+        run: du -sh dist && find dist -name '*.png' -o -name '*.webmanifest' | sort
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

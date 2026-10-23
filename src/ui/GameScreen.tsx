@@ -348,7 +348,7 @@ export function GameScreen(): ReactElement {
 
       <div className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+6px)] z-0 flex justify-center">
         <p className="hud-panel hud-outline px-3 py-1 text-center text-[11px] leading-snug text-[#9aa3ae]">
-          Этап 12 · Telegram · ?seed=42 · ?mock=1
+          v1.0.0 · ?seed=42 · ?quality=low · ?reset=1
         </p>
       </div>
     </div>

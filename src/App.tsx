@@ -16,6 +16,7 @@ import { gameHost } from './game/GameHost';
 import { installGestureGuards } from './mobile/gestures';
 import { installLifecycle } from './mobile/lifecycle';
 import { audio } from './game/audio';
+import { runRequestedReset } from './debug/reset';
 import { lockLandscape, isLandscape } from './mobile/orientation';
 import { watchSafeArea } from './telegram/viewport';
 import { watchTheme } from './telegram/theme';
@@ -77,6 +78,9 @@ export function App(): ReactElement {
     );
 
     void (async () => {
+      // `?reset=1` wipes local and mirrored progress and reloads; nothing below
+      // should run against a database that is about to disappear.
+      if (await runRequestedReset()) return;
       await useSettingsStore.getState().hydrate();
       // Meta bonuses must be known before the engine builds the dungeon scene.
       await useMetaStore.getState().hydrate();

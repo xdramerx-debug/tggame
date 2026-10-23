@@ -65,3 +65,25 @@ test.describe('Telegram chrome in a browser build', () => {
     await expect(page.getByTestId('cloud-status')).toContainText('только на этом устройстве');
   });
 });
+
+test.describe('installable app shell', () => {
+  test('serves a landscape fullscreen manifest with generated icons', async ({ request }) => {
+    const response = await request.get('/manifest.webmanifest');
+    expect(response.ok()).toBe(true);
+    const manifest = (await response.json()) as {
+      display: string;
+      orientation: string;
+      icons: { src: string; sizes: string; purpose: string }[];
+    };
+    expect(manifest.display).toBe('fullscreen');
+    expect(manifest.orientation).toBe('landscape');
+    expect(manifest.icons).toHaveLength(3);
+    expect(manifest.icons.some((icon) => icon.purpose === 'maskable')).toBe(true);
+
+    for (const icon of manifest.icons) {
+      const asset = await request.get(`/${icon.src}`);
+      expect(asset.ok(), `${icon.src} must be served`).toBe(true);
+      expect(asset.headers()['content-type']).toContain('image/png');
+    }
+  });
+});
