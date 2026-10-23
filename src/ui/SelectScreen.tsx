@@ -82,6 +82,7 @@ export function SelectScreen(): ReactElement {
                 <button
                   key={character.id}
                   type="button"
+                  data-testid={`fighter-${character.id}`}
                   onClick={() => {
                     sfx.play('ui');
                     setFighter(character.id);
@@ -128,6 +129,7 @@ export function SelectScreen(): ReactElement {
                   <button
                     key={character.id}
                     type="button"
+                    data-testid={`opponent-${character.id}`}
                     onClick={() => {
                       sfx.play('ui');
                       setOpponent(character.id);
@@ -150,6 +152,7 @@ export function SelectScreen(): ReactElement {
               <button
                 key={entry.id}
                 type="button"
+                data-testid={`difficulty-${entry.id}`}
                 onClick={() => {
                   sfx.play('ui');
                   setDifficulty(entry.id);

@@ -1,11 +1,14 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * Mobile E2E: the whole path a player actually takes, on a landscape phone.
+ * Mobile E2E: the path a player actually takes, on a landscape phone.
  *
- * WebGL is provided by SwiftShader on CI (see playwright.config.ts), so the 3D
- * stage really is created — these tests would fail on a black-canvas regression.
+ * WebGL is provided by SwiftShader on CI for Chromium (see playwright.config.ts).
+ * WebKit on a Linux runner has no reliable WebGL, so the 3D-dependent specs are
+ * skipped there — the menu and selection flow still run on both engines.
  */
+
+const NO_WEBGL = 'WebKit on the Linux CI runner has no reliable WebGL context';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -28,13 +31,16 @@ test('menu boots with a title, a call to action and big enough touch targets', a
   }
 });
 
-test('selection screen offers the four freaks and starts a fight', async ({ page }) => {
+test('selection screen offers the four freaks and starts a fight', async ({ page, browserName }) => {
   await page.getByTestId('menu-start').tap();
 
   await expect(page.getByRole('heading', { level: 2 })).toContainText('урода');
-  for (const name of ['ГРЫЗЛО', 'ШВЕЯ', 'ОКО', 'ПЕЧЬ']) {
-    await expect(page.getByRole('button', { name: new RegExp(name) })).toBeVisible();
+  for (const id of ['grizlo', 'shveya', 'oko', 'pech']) {
+    await expect(page.getByTestId(`fighter-${id}`)).toBeVisible();
   }
+  await expect(page.getByTestId('difficulty-hard')).toBeVisible();
+
+  test.skip(browserName === 'webkit', NO_WEBGL);
 
   await page.getByTestId('select-start').tap();
 
@@ -43,43 +49,54 @@ test('selection screen offers the four freaks and starts a fight', async ({ page
   await expect(page.getByTestId('hud-timer')).toHaveText(/^\d{2}$/);
 
   const webgl = await canvas.evaluate((element) => {
-    const context = (element as HTMLCanvasElement).getContext('webgl2') ?? (element as HTMLCanvasElement).getContext('webgl');
-    return context !== null;
+    const target = element as HTMLCanvasElement;
+    return target.getContext('webgl2') !== null || target.getContext('webgl') !== null;
   });
   expect(webgl).toBe(true);
 });
 
-test('pause sheet opens, sound toggles and the fight resumes', async ({ page }) => {
+test('pause sheet opens and the fight resumes', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit', NO_WEBGL);
+
   await page.getByTestId('menu-start').tap();
   await page.getByTestId('select-start').tap();
-  await expect(page.getByTestId('hud-timer')).toBeVisible();
+  const timer = page.getByTestId('hud-timer');
+  await expect(timer).toBeVisible();
+
+  // Let the intro finish so the clock is actually running.
+  await page.waitForTimeout(2500);
+  const before = await timer.textContent();
 
   await page.getByTestId('pause-button').tap();
   await expect(page.getByText('ПАУЗА')).toBeVisible();
 
+  const paused = await timer.textContent();
+  await page.waitForTimeout(1200);
+  expect(await timer.textContent()).toBe(paused);
+
   await page.getByTestId('pause-resume').tap();
   await expect(page.getByText('ПАУЗА')).toBeHidden();
 
-  const timer = page.getByTestId('hud-timer');
-  const before = await timer.textContent();
-  await page.waitForTimeout(1200);
-  const after = await timer.textContent();
-  expect(after).not.toBe(before);
+  await page.waitForTimeout(1600);
+  expect(await timer.textContent()).not.toBe(before);
 });
 
-test('the fight runs on a fixed tick and the timer actually counts down', async ({ page }) => {
+test('the fight runs on a fixed tick and the timer counts down', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit', NO_WEBGL);
+
   await page.getByTestId('menu-start').tap();
   await page.getByTestId('select-start').tap();
 
   const timer = page.getByTestId('hud-timer');
   await expect(timer).toBeVisible();
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(4500);
   const value = Number(await timer.textContent());
+  // Intro is 1.6 s, so after 4.5 s the clock is a couple of seconds in.
   expect(value).toBeLessThan(60);
-  expect(value).toBeGreaterThan(50);
+  expect(value).toBeGreaterThan(48);
 });
 
-test('no horizontal overflow and the arena canvas fills the viewport', async ({ page }) => {
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
-  expect(overflow).toBe(true);
+test('no horizontal overflow on the menu', async ({ page }) => {
+  const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+  expect(fits).toBe(true);
 });
