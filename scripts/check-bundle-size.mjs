@@ -1,62 +1,59 @@
 #!/usr/bin/env node
 /**
- * Bundle budget guard.
+ * Bundle budget gate.
  *
- * Spec: < 3 MB gzip for the initial bundle (models are lazy-loaded later).
- * Computes gzip size of every emitted asset and fails CI if the sum exceeds the
- * budget, or if any JS chunk is unexpectedly large (> 900 KB raw is a smell).
+ * FREAKPIT targets phones on cellular inside a Telegram WebView, so the whole
+ * app (Three.js included) has to stay under budget. The check measures gzip
+ * size of the built assets, which is what actually travels over the network.
  */
-import { gzipSync } from 'node:zlib';
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
+import path from 'node:path';
 
-const BUDGET_GZIP = 3 * 1024 * 1024;
-const CHUNK_WARN_BYTES = 900 * 1024;
-const DIST = new URL('../dist/', import.meta.url).pathname;
+const DIST = path.resolve('dist/assets');
+const TOTAL_BUDGET_KB = 420;
+const CHUNK_BUDGET_KB = 170;
 
-async function walk(dir) {
-  const entries = await readdir(dir, { withFileTypes: true });
-  const files = [];
-  for (const entry of entries) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...(await walk(full)));
-    else files.push(full);
-  }
-  return files;
-}
-
-let totalGzip = 0;
-let totalRaw = 0;
-const rows = [];
-
-for (const file of await walk(DIST)) {
-  const info = await stat(file);
-  const content = await readFile(file);
-  const gz = gzipSync(content, { level: 9 }).length;
-  totalGzip += gz;
-  totalRaw += info.size;
-  rows.push({ file: file.replace(DIST, ''), raw: info.size, gzip: gz });
-}
-
-rows.sort((a, b) => b.gzip - a.gzip);
-for (const row of rows.slice(0, 12)) {
-  console.log(`${row.gzip.toString().padStart(9)} B  ${row.raw.toString().padStart(9)} B  ${row.file}`);
-}
-console.log(`\nTotal raw:  ${(totalRaw / 1024).toFixed(1)} kB`);
-console.log(`Total gzip: ${(totalGzip / 1024).toFixed(1)} kB (budget ${(BUDGET_GZIP / 1024).toFixed(0)} kB)`);
-
-// Rapier's compat build inlines the WASM as base64 and is loaded lazily on the
-// splash screen; it is accounted for in the total but is not an "unexpected" chunk.
-const EXPECTED_LAZY = /rapier/i;
-const jsChunks = rows.filter(
-  (row) => row.file.endsWith('.js') && row.raw > CHUNK_WARN_BYTES && !EXPECTED_LAZY.test(row.file),
-);
-if (jsChunks.length > 0) {
-  console.warn(`\n⚠ JS chunks above ${CHUNK_WARN_BYTES / 1024} kB: ${jsChunks.map((c) => c.file).join(', ')}`);
-}
-
-if (totalGzip > BUDGET_GZIP) {
-  console.error(`\n✖ Bundle budget exceeded by ${((totalGzip - BUDGET_GZIP) / 1024).toFixed(0)} kB`);
+const files = await readdir(DIST).catch(() => []);
+if (files.length === 0) {
+  console.error('dist/assets is empty — run `npm run build` first.');
   process.exit(1);
 }
-console.log('\n✔ Bundle within budget');
+
+const rows = [];
+let total = 0;
+let failed = false;
+
+for (const file of files.sort()) {
+  if (!/\.(js|css)$/.test(file)) continue;
+  const buffer = await readFile(path.join(DIST, file));
+  const gzip = gzipSync(buffer, { level: 9 }).length;
+  const kb = gzip / 1024;
+  total += kb;
+  rows.push({ file, raw: buffer.length / 1024, gzip: kb });
+  if (kb > CHUNK_BUDGET_KB) {
+    console.error(`✗ ${file} is ${kb.toFixed(1)} kB gzip (limit ${CHUNK_BUDGET_KB} kB)`);
+    failed = true;
+  }
+}
+
+console.log('asset                                     raw kB    gzip kB');
+for (const row of rows) {
+  console.log(`${row.file.padEnd(40)} ${row.raw.toFixed(1).padStart(8)} ${row.gzip.toFixed(1).padStart(10)}`);
+}
+console.log(`${'total'.padEnd(40)} ${''.padStart(8)} ${total.toFixed(1).padStart(10)}`);
+
+if (total > TOTAL_BUDGET_KB) {
+  console.error(`✗ total ${total.toFixed(1)} kB gzip exceeds the ${TOTAL_BUDGET_KB} kB budget`);
+  failed = true;
+} else {
+  console.log(`✓ total ${total.toFixed(1)} kB gzip, budget ${TOTAL_BUDGET_KB} kB`);
+}
+
+const index = await stat(path.resolve('dist/index.html')).catch(() => null);
+if (!index) {
+  console.error('✗ dist/index.html is missing');
+  failed = true;
+}
+
+process.exit(failed ? 1 : 0);

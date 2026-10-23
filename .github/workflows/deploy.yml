@@ -1,42 +1,23 @@
-name: Deploy to GitHub Pages
+name: Deploy FREAKPIT
 
-# Publishes the built site (dist/) to GitHub Pages.
-#
-# Two triggers on purpose:
-#
-# - `push` to an arena branch. This is the one that actually works today: the
-#   repository default branch (`main`) is empty, and GitHub only exposes
-#   `workflow_dispatch` for workflows that exist on the default branch. A
-#   push-triggered workflow, on the other hand, is read from the branch being
-#   pushed — so the app deploys itself from the very commit that was tested.
-# - `workflow_dispatch`, kept for the day `main` carries the workflow; then a
-#   release becomes an explicit button instead of a side effect of a push.
-#
-# The job repeats every quality gate instead of trusting the previous run: a
-# release must be built from a commit that is green *now*.
 on:
-  workflow_dispatch:
   push:
-    branches: ['arena/**']
-    # Docs-only commits cannot change the bundle: skip the rebuild.
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
+    branches: [main, 'arena/**']
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
   build:
-    name: Build site
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,26 +25,22 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Assets (GLB, WAV, PNG icons) are generated, never committed.
-      - name: Generate assets
-        run: npm run assets
       - run: npm run typecheck
-      - run: npm run test
-      - name: Production build
-        run: npm run build
-      - name: Verify build output
-        run: npm run check:dist
-      - name: Bundle budget
-        run: npm run size
-      - name: Report artifact size
-        run: du -sh dist && find dist -name '*.png' -o -name '*.webmanifest' | sort
+      - run: npm test
+      - run: npm run build
+      - run: npm run check:dist
+      # The Pages site must be the built app, never the repo root: the root
+      # index.html points at /src/main.tsx and would show a blank boot shell.
+      - name: Fail if the build is missing a real bundle
+        run: |
+          test -f dist/index.html
+          test -n "$(ls dist/assets/*.js 2>/dev/null)"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
-    name: Publish
     needs: build
     runs-on: ubuntu-latest
     environment:

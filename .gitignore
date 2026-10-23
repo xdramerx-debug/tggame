@@ -11,10 +11,3 @@ test-results
 !.env.example
 .vite
 .vercel
-public/assets/**/*.glb
-public/assets/manifest.json
-public/assets/**/*.ktx2
-public/assets/audio/*.wav
-public/assets/audio/*.ogg
-public/assets/icons/*.png
-!public/assets/.gitkeep

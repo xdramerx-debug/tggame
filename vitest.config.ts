@@ -13,11 +13,11 @@ export default defineConfig({
     reporters: ['default'],
     coverage: {
       reporter: ['text', 'lcov'],
-      include: ['src/game/core/**', 'src/game/visual/textures/**', 'src/mobile/safeArea.ts', 'src/db/**'],
+      include: ['src/fight/**', 'src/characters/**'],
       thresholds: {
-        // Pure-function modules must stay well covered; UI/engine glue is E2E-tested.
-        lines: 60,
-        functions: 60,
+        // The simulation is pure and must stay covered; rendering is E2E-tested.
+        lines: 70,
+        functions: 70,
       },
     },
   },

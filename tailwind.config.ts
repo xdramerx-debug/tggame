@@ -1,42 +1,23 @@
 import type { Config } from 'tailwindcss';
 
-/**
- * Design tokens are mirrored as CSS variables in `src/styles/index.css`
- * so both Tailwind classes and raw shader/DOM code share one palette.
- */
-const config: Config = {
+/** Design tokens: one place for the palette the HUD, menus and 3D stage share. */
+export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        void: '#0B0E14',
-        slate: '#1E2A3A',
-        gold: '#C9A227',
-        blood: '#B33A3A',
-        frost: '#4A7C8C',
-        bark: '#6B4E2E',
+        ink: '#08060a',
+        char: '#141018',
+        rust: '#8d2f1f',
+        blood: '#c1372a',
+        bone: '#e8ddc8',
+        acid: '#b6e04a',
+        ember: '#f0a13a',
       },
       fontFamily: {
-        display: ['"Cinzel"', 'Georgia', 'serif'],
-        sans: ['system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
-      },
-      borderRadius: {
-        hud: '14px',
-      },
-      boxShadow: {
-        hud: '0 0 0 2px rgba(0,0,0,0.85), 0 6px 24px rgba(0,0,0,0.55)',
-      },
-      screens: {
-        // Landscape phone breakpoints; the game never targets portrait layouts.
-        short: { raw: '(max-height: 430px)' },
+        display: ['"Arial Black"', 'Impact', 'system-ui', 'sans-serif'],
       },
     },
   },
-  corePlugins: {
-    // Hover styles are meaningless on touch-only targets and cost bytes.
-    preflight: true,
-  },
   plugins: [],
-};
-
-export default config;
+} satisfies Config;

@@ -3,13 +3,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 /**
- * TENEBRIS build config.
+ * FREAKPIT build config.
  *
- * Notes:
  * - `target: es2020` matches the browserslist baseline (iOS 15+, Chrome Android 100+).
- * - `base: './'` keeps relative asset URLs working inside Telegram WebView / file-ish hosts.
- * - `allowedHosts: true` is required because the app is served through an E2B preview proxy
- *   and through Telegram's WebView host; there is no meaningful host allowlist on mobile.
+ * - `base: './'` keeps relative URLs working inside the Telegram WebView and on
+ *   GitHub Pages served from a sub-path.
+ * - `allowedHosts: true` is required by the sandbox preview proxy and by the
+ *   Telegram WebView host; there is no meaningful host allowlist on mobile.
  */
 export default defineConfig({
   base: './',
@@ -24,9 +24,6 @@ export default defineConfig({
     cssTarget: 'chrome100',
     sourcemap: false,
     assetsInlineLimit: 2048,
-    // Rapier ships its WASM inline (compat build) and is a deliberately lazy
-    // chunk; the strict size gate lives in scripts/check-bundle-size.mjs.
-    chunkSizeWarningLimit: 4500,
     rollupOptions: {
       output: {
         manualChunks(id: string): string | undefined {

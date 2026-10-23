@@ -1,9 +1,9 @@
 {
-  "name": "tenebris",
+  "name": "freakpit",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "module",
-  "description": "TENEBRIS — mobile-only 3D roguelite survival RPG for Telegram Mini Apps",
+  "description": "FREAKPIT — mobile 3D fighting game for Telegram Mini Apps",
   "engines": {
     "node": ">=22.12"
   },
@@ -13,9 +13,6 @@
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
-    "assets": "tsx scripts/build-assets.ts",
-    "predev": "npm run assets",
-    "prebuild": "npm run assets",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -23,11 +20,8 @@
     "check:dist": "node scripts/check-dist.mjs"
   },
   "dependencies": {
-    "@dimforge/rapier3d-compat": "^0.21.0",
     "@telegram-apps/sdk": "^3.11.8",
-    "dexie": "^4.4.6",
     "framer-motion": "^11.18.2",
-    "howler": "^2.2.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "three": "^0.186.1",
@@ -35,7 +29,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
-    "@types/howler": "^2.2.13",
     "@types/node": "^22.19.0",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
@@ -46,7 +39,6 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "postcss": "^8.5.31",
     "tailwindcss": "^3.4.19",
-    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.0",
     "vite": "^8.3.5",

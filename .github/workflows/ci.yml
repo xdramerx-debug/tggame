@@ -2,18 +2,22 @@ name: CI
 
 on:
   push:
-    branches: [main, 'arena/**']
+    branches: ['**']
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   quality:
-    name: Typecheck · Lint · Unit · Build
+    name: Typecheck · lint · unit · build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,37 +25,22 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Models are generated, not committed: the pipeline must be reproducible.
-      - name: Build assets
-        run: npm run assets
-      - name: TypeScript strict (no any)
-        run: npm run typecheck
-      - name: ESLint
-        run: npm run lint
-      - name: Vitest
-        run: npm run test
-      - name: Production build
-        run: npm run build
-      # Guards the failure that made the deployed site show only its splash:
-      # a page that still points at /src/ instead of the hashed bundle.
-      - name: Verify build output
-        run: npm run check:dist
-      - name: Bundle budget (< 3 MB gzip)
-        run: npm run size
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist
-          retention-days: 7
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm run size
+      - run: npm run check:dist
 
   e2e:
-    name: Playwright mobile (Pixel 7 · iPhone 13)
-    runs-on: ubuntu-latest
-    # SwiftShader renders every frame on the CPU: a full two-device pass of the
-    # whole suite takes 15–20 minutes, so the budget has headroom for retries.
-    timeout-minutes: 45
+    name: E2E · ${{ matrix.project }}
     needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [android-chrome-landscape, ios-webkit-landscape]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -59,21 +48,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Build assets
-        run: npm run assets
-      - name: Install browsers
-        run: npx playwright install --with-deps chromium webkit
-      - name: Run mobile E2E
-        run: npx playwright test --reporter=list,json
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npx playwright test --project=${{ matrix.project }}
         env:
-          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/e2e.json
-      - name: Annotate E2E failures
-        if: failure()
-        run: node scripts/ci-annotate-playwright.mjs test-results/e2e.json
-      - name: Upload report
-        if: failure()
+          CI: '1'
+      - if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
-          path: playwright-report
+          name: playwright-${{ matrix.project }}
+          path: |
+            playwright-report
+            test-results
           retention-days: 7

@@ -1,85 +1,51 @@
 #!/usr/bin/env node
 /**
- * Build-output guard.
+ * Post-build smoke check used by CI and by the deploy workflow.
  *
- * Exists because of a real outage: GitHub Pages served the *source* index.html
- * from the branch root, which loads `/src/main.tsx` — a file that only exists in
- * development. The page rendered its splash and then nothing, forever.
- *
- * This check makes that class of bug impossible to ship: `dist/index.html` must
- * reference the hashed bundle, must not reference `/src/`, and every asset it
- * points at must exist on disk (case-sensitively, since Pages is Linux).
+ * Catches the classic GitHub Pages failures before they reach a phone:
+ * absolute asset paths, a missing entry point, an unbuilt `/src/` reference,
+ * or a service worker that would cache a broken shell.
  */
-import { readFile, access } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { access, readFile } from 'node:fs/promises';
+import path from 'node:path';
 
-const DIST = resolve(process.cwd(), 'dist');
-const failures = [];
+const root = path.resolve('dist');
+const errors = [];
 
-function fail(message) {
-  failures.push(message);
-}
-
-const html = await readFile(join(DIST, 'index.html'), 'utf8').catch(() => null);
+const html = await readFile(path.join(root, 'index.html'), 'utf8').catch(() => null);
 if (html === null) {
-  console.error('✖ dist/index.html is missing — run `npm run build` first');
+  console.error('✗ dist/index.html is missing — did the build run?');
   process.exit(1);
 }
 
-// 1. A built entry point, not the dev one.
-if (/(src|href)="\.?\/?src\//.test(html)) {
-  fail('index.html still references /src/ — this is the source file, not a build');
-}
-if (!/src="\.\/assets\/[^"]+\.js"/.test(html)) {
-  fail('index.html has no hashed module entry (./assets/*.js)');
-}
+if (!html.includes('id="root"')) errors.push('index.html has no #root mount point');
+if (html.includes('/src/main.tsx')) errors.push('index.html still points at the dev entry /src/main.tsx');
+if (/<script[^>]+src="\//.test(html)) errors.push('absolute script path: the app will break on a sub-path deploy');
+if (/<link[^>]+href="\//.test(html)) errors.push('absolute stylesheet path: the app will break on a sub-path deploy');
 
-// 2. Every local asset referenced by the page must exist next to it.
-const references = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
+const referenced = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
   .map((match) => match[1])
-  .filter((value) => value && !/^(https?:|data:|#|\/\/)/.test(value));
+  .filter((url) => url && !url.startsWith('http') && !url.startsWith('data:'));
 
-for (const reference of references) {
-  const path = join(DIST, reference.replace(/^\.\//, '').split('?')[0]);
+for (const url of referenced) {
+  if (url.startsWith('/')) {
+    errors.push(`absolute asset reference: ${url}`);
+    continue;
+  }
   try {
-    await access(path);
+    await access(path.join(root, url));
   } catch {
-    fail(`referenced file is missing from the build: ${reference}`);
+    errors.push(`referenced asset is missing from dist: ${url}`);
   }
 }
 
-// 3. The manifest and the icons it lists must ship together.
-const manifestPath = join(DIST, 'manifest.webmanifest');
-const manifestRaw = await readFile(manifestPath, 'utf8').catch(() => null);
-if (manifestRaw === null) {
-  fail('manifest.webmanifest is missing');
-} else {
-  const manifest = JSON.parse(manifestRaw);
-  for (const icon of manifest.icons ?? []) {
-    try {
-      await access(join(DIST, icon.src));
-    } catch {
-      fail(`manifest icon is missing from the build: ${icon.src}`);
-    }
-  }
-  if (manifest.orientation !== 'landscape' || manifest.display !== 'fullscreen') {
-    fail('manifest must stay landscape + fullscreen (the game cannot work otherwise)');
-  }
-}
+if (!html.includes('name="viewport"')) errors.push('viewport meta tag is missing');
+if (!html.includes('viewport-fit=cover')) errors.push('viewport-fit=cover is required for safe-area insets');
 
-// 4. No stray copy of the source tree in the artifact.
-for (const forbidden of ['src', 'node_modules', 'tests', 'scripts']) {
-  try {
-    await access(join(DIST, forbidden));
-    fail(`dist must not contain ${forbidden}/`);
-  } catch {
-    // Expected: the build is flat.
-  }
-}
-
-if (failures.length > 0) {
-  console.error('✖ build output is not deployable:');
-  for (const message of failures) console.error(`  - ${message}`);
+if (errors.length > 0) {
+  console.error('✗ dist check failed:');
+  for (const error of errors) console.error(`  - ${error}`);
   process.exit(1);
 }
-console.log(`✔ dist is deployable (${references.length} local references verified)`);
+
+console.log(`✓ dist is deployable (${referenced.length} local assets, relative paths only)`);
