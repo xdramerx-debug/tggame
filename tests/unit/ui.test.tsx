@@ -1,164 +1,118 @@
-// @vitest-environment jsdom
-import { act } from 'react';
-import { createRoot } from 'react-dom/client';
+import { act, cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { App } from '@/App';
-import { useGameStore } from '@/state/gameStore';
+import { App } from '../../src/App';
+import { createRateState } from '../../src/game/codes';
+import { createInitialGameState } from '../../src/state/initialState';
+import { useGameStore } from '../../src/state/gameStore';
+
+/**
+ * UI smoke tests: the app boots, the FTUE battle pauses on the first hit,
+ * event playback reaches the victory panel, and defeat opens the
+ * «Эхо павших» report. Timers are advanced in chunks — playback is a chain of
+ * effect → setTimeout → setState, and one huge advance would starve it.
+ */
+
+function resetStore(): void {
+  useGameStore.setState({
+    game: createInitialGameState(),
+    booted: true,
+    battle: null,
+    screen: 'home',
+    modal: null,
+    toasts: [],
+    defeatTips: [],
+    offlineReward: null,
+    summonResults: null,
+    lastCodeResult: null,
+    ftuePause: false,
+    codeRate: createRateState(),
+  });
+}
+
+async function advance(ms: number, step = 400): Promise<void> {
+  let left = ms;
+  while (left > 0) {
+    const chunk = Math.min(step, left);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(chunk);
+    });
+    left -= chunk;
+  }
+}
+
+async function bootApp(): Promise<void> {
+  render(<App />);
+  await advance(2400, 2400);
+}
 
 beforeEach(() => {
-  (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  vi.useFakeTimers();
-  HTMLCanvasElement.prototype.getContext = vi.fn(() => {
-    const gradient = { addColorStop: vi.fn() };
-    return {
-      setTransform: vi.fn(),
-      clearRect: vi.fn(),
-      createLinearGradient: vi.fn(() => gradient),
-      fillRect: vi.fn(),
-      beginPath: vi.fn(),
-      arc: vi.fn(),
-      fill: vi.fn(),
-      save: vi.fn(),
-      restore: vi.fn(),
-      translate: vi.fn(),
-      rotate: vi.fn(),
-      stroke: vi.fn(),
-      ellipse: vi.fn(),
-      globalAlpha: 1,
-      globalCompositeOperation: 'source-over',
-      fillStyle: '',
-      strokeStyle: '',
-      lineWidth: 1,
-      lineCap: 'round',
-    } as unknown as CanvasRenderingContext2D;
-  }) as unknown as typeof HTMLCanvasElement.prototype.getContext;
-
-  useGameStore.getState().resetSave();
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  window.localStorage.clear();
+  resetStore();
 });
 
 afterEach(() => {
+  cleanup();
   vi.useRealTimers();
 });
 
-describe('Full App UI Flow across all 5 Mobile Screens', () => {
-  it('mounts cleanly, runs live auto-battle steps, summons x10 heroes, upgrades hero & claims quests', () => {
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    const root = createRoot(host);
+describe('app smoke', () => {
+  it('boots to the home screen with the FTUE hint and the battle CTA', async () => {
+    await bootApp();
+    expect(await screen.findByText(/Велес, твой первый герой/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /В БОЙ/ })).toBeTruthy();
+    expect(screen.getByText('Эхо павших')).toBeTruthy();
+  });
 
+  it('FTUE pauses on the first hit, then playback ends with the victory panel', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTimeAsync });
+    await bootApp();
+    // Естественный FTUE-поток: step 0 → startBattle сам поднимает step до 1,
+    // включает паузу на первом ударе и гарантирует победу (§9)
     act(() => {
-      root.render(<App />);
+      useGameStore.getState().startBattle('campaign');
     });
+    expect(useGameStore.getState().game.ftue.step).toBe(1);
+    expect(useGameStore.getState().ftuePause).toBe(true);
+    expect(useGameStore.getState().battle?.result.victory).toBe(true);
+    await advance(6000);
+    expect(screen.getByText(/Твой герой атакует/)).toBeTruthy();
+    expect(useGameStore.getState().ftuePause).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Понятно, дальше!' }));
+    // keep pumping the playback chain until it finishes
+    for (let i = 0; i < 80 && !(useGameStore.getState().battle?.finished ?? false); i++) {
+      await advance(400);
+    }
+    expect(useGameStore.getState().battle?.finished).toBe(true);
+    expect(screen.getByText('Победа!')).toBeTruthy();
+    const g = useGameStore.getState().game;
+    expect(g.campaign.stage).toBe(2);
+    expect(useGameStore.getState().battle?.granted?.gold ?? 0).toBeGreaterThan(0);
+  });
 
-    // 1. Verify Battle Screen & AFK Chest rendered
-    expect(host.textContent).toContain('Этап 1-1');
-    expect(host.textContent).toContain('Сундук AFK');
+  it('defeat opens the «Эхо павших» report with tips and grants souls', async () => {
+    await bootApp();
+    act(() => {
+      useGameStore.getState().submitCode('admin_force_lose');
+      useGameStore.getState().startBattle('campaign');
+      useGameStore.getState().finishBattle();
+    });
+    expect(screen.getByText(/Поражение — это не конец/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Реванш/ })).toBeTruthy();
+    expect(useGameStore.getState().defeatTips.length).toBeGreaterThan(0);
+    expect(useGameStore.getState().game.resources.souls).toBeLessThanOrEqual(20);
+  });
 
-    // Advance auto-battle timer so combat steps, VFX, and damage numbers execute
+  it('renders the summon screen and the odds modal', async () => {
+    await bootApp();
     act(() => {
-      vi.advanceTimersByTime(3000);
+      useGameStore.getState().setScreen('summon');
     });
-
-    // Trigger Quick Raid (+2h)
-    const raidBtn = Array.from(host.querySelectorAll('button')).find((b) =>
-      b.textContent.includes('Набег +2ч'),
-    );
-    expect(raidBtn).toBeDefined();
-    act(() => {
-      raidBtn?.click();
-    });
-    expect(useGameStore.getState().gold).toBeGreaterThan(10_000);
-
-    // 2. Switch to Summon Screen & trigger 10x Summon
-    act(() => {
-      useGameStore.getState().setActiveTab('summon');
-      vi.advanceTimersByTime(250);
-    });
-    expect(host.textContent).toContain('Портал Созвездий');
-
-    const tenPullBtn = Array.from(host.querySelectorAll('button')).find((b) =>
-      b.textContent.includes('Призыв x10'),
-    );
-    expect(tenPullBtn).toBeDefined();
-    act(() => {
-      tenPullBtn?.click();
-      vi.advanceTimersByTime(500);
-    });
-    expect(host.textContent).toContain('Призвано героев: 10');
-
-    // Dismiss summon modal
-    const continueBtn = Array.from(host.querySelectorAll('button')).find((b) =>
-      b.textContent.includes('Продолжить'),
-    );
-    act(() => {
-      continueBtn?.click();
-      vi.advanceTimersByTime(250);
-    });
-
-    // 3. Switch to Heroes Screen & Level Up + Upgrade All Gear
-    act(() => {
-      useGameStore.getState().setActiveTab('heroes');
-      vi.advanceTimersByTime(250);
-    });
-    expect(host.textContent).toContain('Игнис');
-    const initialIgnisLvl = useGameStore.getState().ownedHeroes.ignis?.level ?? 1;
-
-    const lvlBtn = Array.from(host.querySelectorAll('button')).find((b) =>
-      b.textContent.includes('Ур. +5'),
-    );
-    act(() => {
-      lvlBtn?.click();
-    });
-    expect(useGameStore.getState().ownedHeroes.ignis?.level).toBeGreaterThan(initialIgnisLvl);
-
-    // 4. Switch to Squad Screen, Auto Lineup & Upgrade Ancient Relic
-    act(() => {
-      useGameStore.getState().setActiveTab('squad');
-      vi.advanceTimersByTime(250);
-    });
-    expect(host.textContent).toContain('Древние Реликвии Легиона');
-    const relicBtn = Array.from(host.querySelectorAll('button')).find((b) =>
-      b.textContent.includes('Усилить'),
-    );
-    act(() => {
-      relicBtn?.click();
-    });
-    expect(useGameStore.getState().relics.valor).toBe(1);
-
-    // 5. Switch to Tower & Quests Screen, climb Floor 1 & claim Quest
-    act(() => {
-      useGameStore.getState().setActiveTab('quests');
-      vi.advanceTimersByTime(250);
-    });
-    const climbBtn = Array.from(host.querySelectorAll('button')).find((b) =>
-      b.textContent.includes('Штурмовать 1 этаж!'),
-    );
-    act(() => {
-      climbBtn?.click();
-      vi.advanceTimersByTime(600);
-    });
-    expect(useGameStore.getState().towerFloor).toBe(2);
-
-    // Switch to Quests sub-tab and claim summon quest
-    const questsSubBtn = Array.from(host.querySelectorAll('button')).find((b) =>
-      b.textContent.includes('Задания'),
-    );
-    act(() => {
-      questsSubBtn?.click();
-      vi.advanceTimersByTime(150);
-    });
-    const claimBtn = Array.from(host.querySelectorAll('button')).find(
-      (b) => b.textContent.trim() === 'Забрать' && !b.disabled,
-    );
-    expect(claimBtn).toBeDefined();
-    act(() => {
-      claimBtn?.click();
-    });
-    expect(useGameStore.getState().claimedQuests.length).toBeGreaterThanOrEqual(1);
-
-    act(() => {
-      root.unmount();
-    });
-    host.remove();
+    expect(screen.getByText('Врата Эха')).toBeTruthy();
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTimeAsync })
+      .click(screen.getByRole('button', { name: /Вероятности/ }));
+    expect(screen.getByText('Вероятности призыва')).toBeTruthy();
+    expect(screen.getByText(/Гарант/)).toBeTruthy();
   });
 });

@@ -1,392 +1,172 @@
-import type { BattleUnit, Faction, HeroRole, HeroVisualSpec, StageBiome, StageDefinition } from './types';
+import type { BattleUnitInput } from './battle';
+import { createRng } from './rng';
+import { computeStats } from './stats';
+import { HEROES, getHeroDef } from './heroes';
+import type { GameState, HeroDef, HeroState, Rank, RewardBundle } from './types';
 
-export const BIOMES: readonly StageBiome[] = [
-  {
-    id: 'ash_citadel',
-    chapterName: 'Пепельные Руины',
-    skyTop: '#2a0f18',
-    skyMid: '#4c1d24',
-    floorColor: '#1f1218',
-    accentColor: '#fb7185',
-    particleKind: 'embers',
-  },
-  {
-    id: 'emerald_wilds',
-    chapterName: 'Изумрудный Лес',
-    skyTop: '#08201e',
-    skyMid: '#113a34',
-    floorColor: '#0c221d',
-    accentColor: '#34d399',
-    particleKind: 'fireflies',
-  },
-  {
-    id: 'frost_spire',
-    chapterName: 'Цитадель Стужи',
-    skyTop: '#09182e',
-    skyMid: '#13325c',
-    floorColor: '#0d2038',
-    accentColor: '#38bdf8',
-    particleKind: 'snow',
-  },
-  {
-    id: 'eclipse_temple',
-    chapterName: 'Храм Затмения',
-    skyTop: '#160b2e',
-    skyMid: '#2e1559',
-    floorColor: '#170d2e',
-    accentColor: '#c084fc',
-    particleKind: 'void',
-  },
-  {
-    id: 'celestial_throne',
-    chapterName: 'Небесный Престол',
-    skyTop: '#1c1608',
-    skyMid: '#423012',
-    floorColor: '#241b0c',
-    accentColor: '#fbbf24',
-    particleKind: 'stars',
-  },
-];
-
-interface MonsterArchetype {
-  readonly id: string;
-  readonly name: string;
-  readonly title: string;
-  readonly faction: Faction;
-  readonly role: HeroRole;
-  readonly hpMult: number;
-  readonly atkMult: number;
-  readonly skillName: string;
-  readonly visual: HeroVisualSpec;
+function must<T>(v: T | undefined, msg: string): T {
+  if (v === undefined) throw new Error(msg);
+  return v;
 }
 
-const MONSTER_POOL: readonly MonsterArchetype[] = [
-  {
-    id: 'm_ash_guard',
-    name: 'Страж Углей',
-    title: 'Слуга Пепла',
-    faction: 'flame',
-    role: 'tank',
-    hpMult: 1.15,
-    atkMult: 0.85,
-    skillName: 'Раскалённый Таран',
-    visual: {
-      primary: '#b91c1c',
-      secondary: '#f97316',
-      glow: '#ef4444',
-      skin: '#451a1a',
-      eye: '#fde047',
-      weapon: 'monster_claw',
-      head: 'demon_skull',
-      back: 'chains',
-      attackVfx: 'slash_fire',
-      ultVfx: 'ult_meteor',
-    },
-  },
-  {
-    id: 'm_thorn_stalker',
-    name: 'Шипастый Ловец',
-    title: 'Тень Чащи',
-    faction: 'sylvan',
-    role: 'assassin',
-    hpMult: 0.88,
-    atkMult: 1.12,
-    skillName: 'Ядовитый Выпад',
-    visual: {
-      primary: '#15803d',
-      secondary: '#84cc16',
-      glow: '#4ade80',
-      skin: '#14532d',
-      eye: '#bef264',
-      weapon: 'dual_daggers',
-      head: 'hooded_rogue',
-      back: 'leaf_mantle',
-      attackVfx: 'slash_wind',
-      ultVfx: 'ult_bloom',
-    },
-  },
-  {
-    id: 'm_frost_wraith',
-    name: 'Вестник Стужи',
-    title: 'Дух Метели',
-    faction: 'frost',
-    role: 'mage',
-    hpMult: 0.9,
-    atkMult: 1.08,
-    skillName: 'Ледяной Осколок',
-    visual: {
-      primary: '#0369a1',
-      secondary: '#67e8f9',
-      glow: '#38bdf8',
-      skin: '#0f172a',
-      eye: '#67e8f9',
-      weapon: 'frost_scepter',
-      head: 'reaper_cowl',
-      back: 'wraith_shroud',
-      attackVfx: 'proj_frost',
-      ultVfx: 'ult_blizzard',
-    },
-  },
-  {
-    id: 'm_void_acolyte',
-    name: 'Адепт Бездны',
-    title: 'Голос Затмения',
-    faction: 'astral',
-    role: 'mage',
-    hpMult: 0.95,
-    atkMult: 1.15,
-    skillName: 'Тёмный Импульс',
-    visual: {
-      primary: '#6d28d9',
-      secondary: '#f43f5e',
-      glow: '#c084fc',
-      skin: '#1e1b4b',
-      eye: '#f43f5e',
-      weapon: 'void_blade',
-      head: 'void_horns',
-      back: 'void_tendrils',
-      attackVfx: 'slash_shadow',
-      ultVfx: 'ult_abyss',
-    },
-  },
+/**
+ * Campaign (§6): 100 linear stages, boss every 10th — bosses check composition,
+ * not just power. Tower: endless mode with first-clear rewards.
+ * Mirror Labyrinth (14.3): fights clones of the player's own team.
+ */
+
+export interface EnemyDef {
+  def: HeroDef;
+  level: number;
+  rank: Rank;
+  isBoss?: boolean;
+  statMult?: number;
+}
+
+export interface StageDef {
+  stage: number;
+  name: string;
+  boss: boolean;
+  enemies: EnemyDef[];
+  firstReward: RewardBundle;
+  repeatReward: RewardBundle;
+}
+
+export const CAMPAIGN_STAGES = 100;
+
+const CHAPTER_NAMES = [
+  'Пробуждение долин', 'Шёпот теней', 'Гнилые топи', 'Каменный пояс',
+  'Осада крепостей', 'Сияющие пустоши', 'Полночные земли', 'Разлом бездны',
+  'Пепел богов', 'Врата Эха',
 ];
 
-const BOSS_POOL: readonly MonsterArchetype[] = [
-  {
-    id: 'boss_ignivar',
-    name: 'Игнивар Разрушитель',
-    title: 'Повелитель Вулкана',
-    faction: 'flame',
-    role: 'warrior',
-    hpMult: 2.35,
-    atkMult: 1.32,
-    skillName: 'Катаклизм Пепла',
-    visual: {
-      primary: '#dc2626',
-      secondary: '#facc15',
-      glow: '#fb7185',
-      skin: '#290d0d',
-      eye: '#fef08a',
-      weapon: 'boss_mace',
-      head: 'demon_skull',
-      back: 'phoenix_wings',
-      attackVfx: 'slash_fire',
-      ultVfx: 'ult_meteor',
-    },
-  },
-  {
-    id: 'boss_verdan',
-    name: 'Морвейн Древний',
-    title: 'Хранитель Корней',
-    faction: 'sylvan',
-    role: 'tank',
-    hpMult: 2.5,
-    atkMult: 1.25,
-    skillName: 'Гнев Древнего Леса',
-    visual: {
-      primary: '#059669',
-      secondary: '#bef264',
-      glow: '#34d399',
-      skin: '#062c1b',
-      eye: '#fde047',
-      weapon: 'boss_mace',
-      head: 'antler_crown',
-      back: 'leaf_mantle',
-      attackVfx: 'proj_nature',
-      ultVfx: 'ult_bloom',
-    },
-  },
-  {
-    id: 'boss_skadi',
-    name: 'Вальгард Ледяной',
-    title: 'Король Вечной Зимы',
-    faction: 'frost',
-    role: 'mage',
-    hpMult: 2.3,
-    atkMult: 1.36,
-    skillName: 'Абсолютный Ноль',
-    visual: {
-      primary: '#0284c7',
-      secondary: '#e0f2fe',
-      glow: '#38bdf8',
-      skin: '#0c192c',
-      eye: '#7dd3fc',
-      weapon: 'frost_scythe',
-      head: 'viking_horns',
-      back: 'ice_crystals',
-      attackVfx: 'slash_frost',
-      ultVfx: 'ult_blizzard',
-    },
-  },
-  {
-    id: 'boss_malakor',
-    name: 'Малакор Звездолом',
-    title: 'Архонт Пустоты',
-    faction: 'astral',
-    role: 'warrior',
-    hpMult: 2.6,
-    atkMult: 1.42,
-    skillName: 'Гибель Созвездий',
-    visual: {
-      primary: '#7e22ce',
-      secondary: '#fbbf24',
-      glow: '#e879f9',
-      skin: '#17092b',
-      eye: '#fb7185',
-      weapon: 'boss_mace',
-      head: 'void_horns',
-      back: 'seraph_wings',
-      attackVfx: 'slash_shadow',
-      ultVfx: 'ult_abyss',
-    },
-  },
+export function chapterOf(stage: number): { chapter: number; name: string } {
+  const chapter = Math.min(10, Math.floor((stage - 1) / 10) + 1);
+  return { chapter, name: CHAPTER_NAMES[chapter - 1] ?? 'Неизведанные земли' };
+}
+
+export const BOSS_NAMES = [
+  'Гурр, Пожиратель Корней', 'Тенетворец Нокс', 'Глубинная Мать Ырр',
+  'Осадный Колосс Брандор', 'Серафим Пепла', 'Ночной Жнец Морвель',
+  'Хранитель Разлома', 'Бездонный Левиафан', 'Падший Владыка Эха', 'Вечный Страж Врат',
 ];
 
-function createMonsterUnit(
-  arch: MonsterArchetype,
-  uid: string,
-  slot: number,
-  level: number,
-  scaleHp: number,
-  scaleAtk: number,
-  isBoss: boolean,
-): BattleUnit {
-  const maxHp = Math.round(520 * scaleHp * arch.hpMult);
-  const atk = Math.round(68 * scaleAtk * arch.atkMult);
-  const def = Math.round(16 + level * 3.2);
+/** Difficulty curve: enemy stat budget grows ~12.5% per stage (matches player growth). */
+function stageBudget(stage: number): { level: number; rank: Rank; mult: number } {
+  const level = Math.min(100, 1 + Math.floor(stage * 0.7));
+  const rankIdx = Math.min(15, Math.floor(stage / 12));
+  const ranks: Rank[] = [5, 6, 7, 8, 9, 10, 'E1', 'E2', 'E3', 'E4', 'E5', 'T1', 'T2', 'T3', 'T4', 'T5'];
+  const rank = ranks[rankIdx] ?? 5;
+  // Linear stat budget on top of level/rank; early stages are deliberately
+  // softer (single starter hero). Growth must stay beatable by meta investment
+  // (auras/forge/stars/echo give roughly ×1.3–2.0 total), hence +2%/stage, not exponential.
+  const mult = (1 + stage * 0.02) * (stage <= 2 ? 0.8 : 1);
+  return { level, rank, mult };
+}
+
+function enemyHeroFor(e: EnemyDef): BattleUnitInput {
+  const heroState: HeroState = {
+    uid: `enemy-${e.def.id}-${e.level}`, defId: e.def.id, level: e.level, rank: e.rank,
+    copies: 0, equip: {}, pactHpBattles: 0, pactSilenceBattles: 0,
+  };
+  const stats = computeStats(heroState);
+  const m = (e.statMult ?? 1) * (e.isBoss ? 1 : 1);
   return {
-    uid,
-    templateId: arch.id,
-    name: arch.name,
-    title: arch.title,
-    side: 'enemy',
-    slot,
-    faction: arch.faction,
-    rarity: isBoss ? 'mythic' : level >= 10 ? 'legendary' : 'rare',
-    role: arch.role,
-    level,
-    stars: Math.min(5, 1 + Math.floor(level / 6)),
-    isBoss,
-    visual: arch.visual,
-    skillName: arch.skillName,
-    skillKind: 'aoe_damage',
-    skillPower: isBoss ? 1.55 : 1.3,
-    maxHp,
-    hp: maxHp,
-    shield: 0,
-    atk,
-    def,
-    speed: (isBoss ? 98 : 90) + Math.min(25, level),
-    crit: isBoss ? 0.16 : 0.08,
-    energy: isBoss ? 40 : 20,
-    frozenTurns: 0,
-    burnTurns: 0,
-    burnDamage: 0,
-    atkBuffTurns: 0,
-    critBuffTurns: 0,
+    def: e.def,
+    isBoss: e.isBoss,
+    level: e.level,
+    rank: String(e.rank),
+    stats: {
+      ...stats,
+      hp: Math.round(stats.hp * m * (e.isBoss ? 2 : 1)),
+      atk: Math.round(stats.atk * m * (e.isBoss ? 1.2 : 1)),
+      def: Math.round(stats.def * m * (e.isBoss ? 1.2 : 1)),
+    },
   };
 }
 
-export function buildStageDefinition(stageNumber: number): StageDefinition {
-  const safeStage = Math.max(1, Math.floor(stageNumber));
-  const chapter = Math.floor((safeStage - 1) / 5) + 1;
-  const stageInChapter = ((safeStage - 1) % 5) + 1;
-  const isBossStage = stageInChapter === 5;
-  const biome = BIOMES[(chapter - 1) % BIOMES.length] ?? BIOMES[0];
-  if (!biome) {
-    throw new Error('Biomes must be non-empty');
+export function buildStage(stage: number, seed = stage * 7919): StageDef {
+  const rng = createRng(seed);
+  const { level, rank, mult } = stageBudget(stage);
+  const boss = stage % 10 === 0;
+  const { chapter } = chapterOf(stage);
+  // Early stages match a small roster: 1 enemy at stage 1–2, +1 every 3 stages (§13: first battle must be winnable)
+  const count = boss ? 4 : Math.min(6, 1 + Math.floor(stage / 3));
+
+  const enemies: EnemyDef[] = [];
+  if (boss) {
+    const bossDef = must(HEROES.filter((h) => h.rarity === 5)[(chapter - 1) % 8] ?? HEROES[0], 'no boss def');
+    enemies.push({ def: bossDef, level: level + 2, rank, isBoss: true, statMult: mult });
+  }
+  while (enemies.length < count) {
+    const pool = boss ? HEROES.filter((h) => h.rarity >= 4) : HEROES;
+    const def = must(pool[rng.int(0, pool.length - 1)], 'no enemy def');
+    enemies.push({ def, level: Math.max(1, level + rng.int(-2, 2)), rank, statMult: mult });
   }
 
-  const scaleHp = Math.pow(1.205, safeStage - 1);
-  const scaleAtk = Math.pow(1.165, safeStage - 1);
-
-  const enemies: BattleUnit[] = [];
-
-  if (isBossStage) {
-    const bossArch = BOSS_POOL[(chapter - 1) % BOSS_POOL.length] ?? BOSS_POOL[0];
-    const guardA = MONSTER_POOL[(chapter * 2) % MONSTER_POOL.length] ?? MONSTER_POOL[0];
-    const guardB = MONSTER_POOL[(chapter * 2 + 1) % MONSTER_POOL.length] ?? MONSTER_POOL[1];
-    if (bossArch && guardA && guardB) {
-      enemies.push(createMonsterUnit(bossArch, `e_${safeStage}_boss`, 0, safeStage + 1, scaleHp, scaleAtk, true));
-      enemies.push(createMonsterUnit(guardA, `e_${safeStage}_g1`, 2, safeStage, scaleHp * 0.72, scaleAtk * 0.82, false));
-      enemies.push(createMonsterUnit(guardB, `e_${safeStage}_g2`, 4, safeStage, scaleHp * 0.72, scaleAtk * 0.82, false));
-    }
-  } else {
-    const count = safeStage === 1 ? 2 : safeStage <= 3 ? 3 : 4;
-    const slots = count === 2 ? [0, 3] : count === 3 ? [0, 1, 3] : [0, 1, 2, 4];
-    for (let i = 0; i < slots.length; i += 1) {
-      const slot = slots[i] ?? 0;
-      const arch = MONSTER_POOL[(safeStage + i) % MONSTER_POOL.length] ?? MONSTER_POOL[0];
-      if (arch) {
-        enemies.push(createMonsterUnit(arch, `e_${safeStage}_${i}`, slot, safeStage, scaleHp, scaleAtk, false));
-      }
-    }
-  }
-
-  const goldReward = Math.round(140 * Math.pow(1.18, safeStage - 1) * (isBossStage ? 2.4 : 1));
-  const essenceReward = Math.round(55 * Math.pow(1.16, safeStage - 1) * (isBossStage ? 2.2 : 1));
-  const gemReward = isBossStage ? 120 + chapter * 30 : 20;
-  const relicStoneReward = isBossStage ? 2 + Math.floor(chapter / 2) : 0;
-
-  const idleGoldPerMin = Math.round(95 * Math.pow(1.15, safeStage - 1));
-  const idleEssencePerMin = Math.round(36 * Math.pow(1.14, safeStage - 1));
-
+  const goldBase = Math.round(500 * Math.pow(1.13, stage - 1));
+  const expBase = Math.round(300 * Math.pow(1.12, stage - 1));
   return {
-    stageNumber: safeStage,
-    chapter,
-    stageInChapter,
-    isBossStage,
-    label: isBossStage ? `${chapter}-${stageInChapter} БОСС` : `${chapter}-${stageInChapter}`,
-    biome,
+    stage,
+    name: boss ? (BOSS_NAMES[chapter - 1] ?? 'Безымянный босс') : `${chapterOf(stage).name} · этап ${stage}`,
+    boss,
     enemies,
-    goldReward,
-    essenceReward,
-    gemReward,
-    relicStoneReward,
-    idleGoldPerMin,
-    idleEssencePerMin,
+    firstReward: boss
+      ? { gold: goldBase * 10, heroExp: expBase * 8, shards: 20 + chapter * 10, crystals: 30 + chapter * 10, souls: 1 }
+      : { gold: goldBase * 4, heroExp: expBase * 3, shards: 2 + Math.floor(stage / 5), souls: stage % 5 === 0 ? 1 : 0 },
+    repeatReward: { gold: goldBase, heroExp: expBase },
   };
 }
 
-export interface TowerFloorDefinition {
-  readonly floor: number;
-  readonly enemies: BattleUnit[];
-  readonly rewardGems: number;
-  readonly rewardGold: number;
-  readonly rewardEssence: number;
-  readonly rewardRelicStones: number;
-  readonly recommendedPower: number;
+export function stageToUnits(stageDef: StageDef): BattleUnitInput[] {
+  return stageDef.enemies.map(enemyHeroFor);
 }
 
-export function buildTowerFloor(floor: number): TowerFloorDefinition {
-  const safeFloor = Math.max(1, Math.floor(floor));
-  const scaleHp = Math.pow(1.26, safeFloor - 1) * 1.25;
-  const scaleAtk = Math.pow(1.21, safeFloor - 1) * 1.18;
+/* --------------------------------- Tower --------------------------------- */
 
-  const bossArch = BOSS_POOL[(safeFloor - 1) % BOSS_POOL.length] ?? BOSS_POOL[0];
-  const mageArch = MONSTER_POOL[(safeFloor + 1) % MONSTER_POOL.length] ?? MONSTER_POOL[0];
-  const guardArch = MONSTER_POOL[safeFloor % MONSTER_POOL.length] ?? MONSTER_POOL[1];
-
-  const enemies: BattleUnit[] = [];
-  if (bossArch && guardArch && mageArch) {
-    enemies.push(createMonsterUnit(guardArch, `tw_${safeFloor}_0`, 0, safeFloor * 2, scaleHp * 0.8, scaleAtk * 0.85, false));
-    enemies.push(createMonsterUnit(bossArch, `tw_${safeFloor}_boss`, 1, safeFloor * 2 + 1, scaleHp * 1.15, scaleAtk, true));
-    enemies.push(createMonsterUnit(mageArch, `tw_${safeFloor}_2`, 2, safeFloor * 2, scaleHp * 0.75, scaleAtk * 0.95, false));
-    enemies.push(createMonsterUnit(mageArch, `tw_${safeFloor}_4`, 4, safeFloor * 2, scaleHp * 0.75, scaleAtk * 0.95, false));
-  }
-
-  const totalPower = enemies.reduce(
-    (sum, e) => sum + Math.round(e.maxHp * 0.22 + e.atk * 3.1 + e.def * 2.4 + e.speed * 1.8),
-    0,
-  );
-
+export function buildTowerFloor(floor: number): StageDef {
+  const s = buildStage(Math.min(CAMPAIGN_STAGES, 5 + Math.floor(floor * 1.6)), 1000 + floor * 104729);
   return {
-    floor: safeFloor,
-    enemies,
-    rewardGems: 150 + safeFloor * 35,
-    rewardGold: Math.round(450 * Math.pow(1.25, safeFloor - 1)),
-    rewardEssence: Math.round(180 * Math.pow(1.23, safeFloor - 1)),
-    rewardRelicStones: 2 + Math.floor(safeFloor / 2),
-    recommendedPower: totalPower,
+    ...s,
+    stage: floor,
+    name: `Башня Эха · этаж ${floor}`,
+    boss: floor % 5 === 0,
+    firstReward: { gold: 2000 * floor, heroExp: 1200 * floor, shards: 5 + floor, crystals: floor % 5 === 0 ? 50 : 10, souls: floor % 3 === 0 ? 1 : 0 },
+    repeatReward: { gold: 400 * floor, heroExp: 250 * floor },
   };
+}
+
+/* -------------------------- Mirror Labyrinth (14.3) -------------------------- */
+
+export function mirrorUnits(state: GameState, floor: number): BattleUnitInput[] {
+  // Copy of the player's own team, scaled a bit by floor
+  const units: BattleUnitInput[] = [];
+  for (const uid of state.team) {
+    if (!uid) continue;
+    const hero = state.heroes[uid];
+    if (!hero) continue;
+    const stats = computeStats(hero);
+    const m = 1 + floor * 0.08;
+    units.push({
+      def: getHeroDef(hero.defId),
+      level: hero.level,
+      rank: String(hero.rank),
+      stats: { ...stats, hp: Math.round(stats.hp * m), atk: Math.round(stats.atk * m), def: Math.round(stats.def * m) },
+    });
+  }
+  if (units.length === 0) {
+    const fallback = must(HEROES[0], 'roster is empty');
+    units.push({ def: fallback, stats: computeStats({ uid: 'x', defId: fallback.id, level: 5, rank: 5, copies: 0, equip: {}, pactHpBattles: 0, pactSilenceBattles: 0 }) });
+  }
+  return units;
+}
+
+/* ------------------------------- Idle income ------------------------------- */
+
+export function idleRatesPerHour(state: GameState): { gold: number; exp: number; shardChance: number } {
+  const stage = Math.max(1, state.campaign.maxStage);
+  const prestige = state.prestige.multiplier;
+  const gold = Math.round((600 + stage * 320) * Math.pow(1.045, stage) * prestige);
+  const exp = Math.round((350 + stage * 210) * Math.pow(1.042, stage) * prestige);
+  return { gold, exp, shardChance: 0.12 + Math.min(0.2, stage * 0.002) };
 }

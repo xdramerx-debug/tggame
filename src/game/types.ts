@@ -1,248 +1,249 @@
-export type Faction = 'flame' | 'frost' | 'sylvan' | 'astral';
+/**
+ * «Хроники Эха» — core domain types.
+ * Battle simulation is pure and UI-agnostic: everything the renderer needs
+ * arrives as a replayable event log inside BattleResult.
+ */
 
-export type Rarity = 'rare' | 'epic' | 'legendary' | 'mythic';
+export type Faction = 'shadow' | 'abyss' | 'forest' | 'fortress' | 'light' | 'dark';
 
-export type HeroRole = 'tank' | 'warrior' | 'mage' | 'assassin' | 'ranger' | 'healer';
+export type Role = 'tank' | 'warrior' | 'mage' | 'assassin' | 'healer' | 'support';
 
-export type EquipSlot = 'weapon' | 'armor' | 'ring' | 'relic';
+export type Rarity = 3 | 4 | 5;
 
-export type WeaponStyle =
-  | 'greatsword'
-  | 'dual_daggers'
-  | 'nature_staff'
-  | 'frost_scepter'
-  | 'shield_axe'
-  | 'twin_axes'
-  | 'moon_bow'
-  | 'frost_scythe'
-  | 'radiant_spear'
-  | 'void_blade'
-  | 'astrolabe'
-  | 'monster_claw'
-  | 'boss_mace';
+/** Hero growth rank. 5★ base → 6..10★ → E1..E5 → T1..T5 (Transcendence). */
+export type Rank = 5 | 6 | 7 | 8 | 9 | 10 | 'E1' | 'E2' | 'E3' | 'E4' | 'E5' | 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
 
-export type HeadStyle =
-  | 'knight_crest'
-  | 'hooded_rogue'
-  | 'antler_crown'
-  | 'ice_tiara'
-  | 'viking_horns'
-  | 'phoenix_crown'
-  | 'berserker_mane'
-  | 'moon_circlet'
-  | 'reaper_cowl'
-  | 'valkyrie_wings'
-  | 'void_horns'
-  | 'halo_visor'
-  | 'demon_skull';
+export type EquipSlot = 'weapon' | 'armor' | 'trinket' | 'boots';
 
-export type BackStyle =
-  | 'cape'
-  | 'scarf'
-  | 'leaf_mantle'
-  | 'ice_crystals'
-  | 'fur_cloak'
-  | 'phoenix_wings'
-  | 'chains'
-  | 'star_quiver'
-  | 'wraith_shroud'
-  | 'seraph_wings'
-  | 'void_tendrils'
-  | 'orbit_rings';
-
-export type VfxKind =
-  | 'slash_fire'
-  | 'slash_wind'
-  | 'slash_shadow'
-  | 'slash_frost'
-  | 'proj_fire'
-  | 'proj_frost'
-  | 'proj_nature'
-  | 'proj_arrow'
-  | 'proj_star'
-  | 'ult_meteor'
-  | 'ult_blizzard'
-  | 'ult_bloom'
-  | 'ult_judgment'
-  | 'ult_abyss'
-  | 'ult_supernova';
-
-export interface HeroVisualSpec {
-  readonly primary: string;
-  readonly secondary: string;
-  readonly glow: string;
-  readonly skin: string;
-  readonly eye: string;
-  readonly weapon: WeaponStyle;
-  readonly head: HeadStyle;
-  readonly back: BackStyle;
-  readonly attackVfx: VfxKind;
-  readonly ultVfx: VfxKind;
-}
-
-export type SkillEffectKind =
-  | 'aoe_damage'
-  | 'front_cleave_shield'
-  | 'heal_all_buff'
-  | 'assassinate_reset'
-  | 'aoe_freeze'
-  | 'team_shield_smash'
-  | 'aoe_burn'
-  | 'lifesteal_burst'
-  | 'multi_arrow'
-  | 'execute_backline'
-  | 'divine_judgment'
-  | 'void_drain'
-  | 'supernova_crit';
-
-export interface HeroTemplate {
-  readonly id: string;
-  readonly name: string;
-  readonly title: string;
-  readonly faction: Faction;
-  readonly rarity: Rarity;
-  readonly role: HeroRole;
-  readonly baseHp: number;
-  readonly baseAtk: number;
-  readonly baseDef: number;
-  readonly baseSpeed: number;
-  readonly baseCrit: number; // e.g., 0.15 = 15%
-  readonly skillName: string;
-  readonly skillDesc: string;
-  readonly passiveName: string;
-  readonly passiveDesc: string;
-  readonly skillKind: SkillEffectKind;
-  readonly skillPower: number; // multiplier e.g. 2.1 = 210% ATK
-  readonly visual: HeroVisualSpec;
-}
-
-export interface OwnedHero {
-  readonly heroId: string;
-  readonly level: number;
-  readonly stars: number; // 1 to 10 (1..5 gold stars, 6..10 crimson/astral stars)
-  readonly shards: number;
-  readonly equip: Record<EquipSlot, number>; // 0 = empty, 1..6 = tier level
-}
-
-export interface RelicLevels {
-  readonly valor: number; // +ATK %
-  readonly vitality: number; // +HP %
-  readonly precision: number; // +Crit %
-  readonly wisdom: number; // +Starting Energy & Skill DMG
-}
-
-export interface FactionAura {
-  readonly id: string;
-  readonly name: string;
-  readonly description: string;
-  readonly hpBonus: number;
-  readonly atkBonus: number;
-  readonly critBonus: number;
-  readonly active: boolean;
-}
-
-export interface ComputedStats {
-  readonly maxHp: number;
-  readonly atk: number;
-  readonly def: number;
-  readonly speed: number;
-  readonly crit: number;
-  readonly power: number;
-}
-
-export interface BattleUnit {
-  readonly uid: string;
-  readonly templateId: string;
-  readonly name: string;
-  readonly title: string;
-  readonly side: 'ally' | 'enemy';
-  readonly slot: number; // 0,1 = front row; 2,3,4 = back row
-  readonly faction: Faction;
-  readonly rarity: Rarity;
-  readonly role: HeroRole;
-  readonly level: number;
-  readonly stars: number;
-  readonly isBoss: boolean;
-  readonly visual: HeroVisualSpec;
-  readonly skillName: string;
-  readonly skillKind: SkillEffectKind;
-  readonly skillPower: number;
-  maxHp: number;
+export interface BaseStats {
   hp: number;
-  shield: number;
   atk: number;
   def: number;
-  speed: number;
+  spd: number;
+  /** 0..1 */
   crit: number;
-  energy: number; // 0..100+
-  frozenTurns: number;
-  burnTurns: number;
-  burnDamage: number;
-  atkBuffTurns: number;
-  critBuffTurns: number;
+  /** multiplier, e.g. 1.5 = 150% damage on crit */
+  critDmg: number;
+  /** flat armor penetration percent, 0..1 */
+  armorBreak: number;
+  /** fraction of dealt damage returned as HP, 0..1 */
+  lifesteal: number;
 }
 
-export interface TargetImpact {
-  readonly targetUid: string;
-  readonly amount: number;
-  readonly isCrit: boolean;
-  readonly isHeal: boolean;
-  readonly isShield: boolean;
-  readonly isWeakness: boolean;
-  readonly killed: boolean;
-  readonly statusApplied?: 'freeze' | 'burn' | 'atk_up' | 'energy';
+export type SkillTarget =
+  | 'enemyFrontFirst' // default single-target order: front slot 1 → slot 2 → back row
+  | 'enemyAll'
+  | 'enemyBackRow'
+  | 'enemyLowestHp'
+  | 'allyLowestHp'
+  | 'allyAll';
+
+export type SkillEffect =
+  | { kind: 'damage'; mult: number; target: SkillTarget }
+  | { kind: 'heal'; mult: number; target: SkillTarget } // mult of caster ATK
+  | { kind: 'shield'; mult: number; target: SkillTarget } // absorbs damage, mult of caster ATK
+  | { kind: 'buffAtk'; mult: number; rounds: number; target: SkillTarget } // +% ATK to allies
+  | { kind: 'debuffDef'; mult: number; rounds: number; target: SkillTarget }; // -% DEF to enemies
+
+export interface SkillDef {
+  name: string;
+  /** proc chance per turn, 0..1 — never 100% for actives */
+  chance: number;
+  effect: SkillEffect;
+  desc: string;
 }
 
-export interface BattleStepResult {
-  readonly actorUid: string;
-  readonly actorName: string;
-  readonly actorSide: 'ally' | 'enemy';
-  readonly isUlt: boolean;
-  readonly skillName: string;
-  readonly vfx: VfxKind;
-  readonly impacts: readonly TargetImpact[];
-  readonly outcome: 'ongoing' | 'victory' | 'defeat';
+export interface HeroDef {
+  id: string;
+  name: string;
+  title: string;
+  faction: Faction;
+  role: Role;
+  rarity: Rarity;
+  emoji: string;
+  base: BaseStats;
+  /** growth per level, e.g. 0.08 = +8% per level */
+  growth: number;
+  skill: SkillDef;
+  /** passive aura text, small always-on bonus encoded in `passive` */
+  passiveName: string;
+  passiveDesc: string;
+  /**
+   * Passive bonuses. Semantics (see stats.ts):
+   * hp/def — fractional multiplier (+0.1 = +10%); atk — fractional (+0.08 = +8%);
+   * spd — flat add; crit/armorBreak/lifesteal — flat add to chance; critDmg — flat add to multiplier.
+   */
+  passive: Partial<BaseStats>;
 }
 
-export interface StageBiome {
-  readonly id: string;
-  readonly chapterName: string;
-  readonly skyTop: string;
-  readonly skyMid: string;
-  readonly floorColor: string;
-  readonly accentColor: string;
-  readonly particleKind: 'embers' | 'fireflies' | 'snow' | 'void' | 'stars';
+export interface EquipItem {
+  uid: string;
+  slot: EquipSlot;
+  name: string;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  /** fractional bonuses, e.g. { hp: 0.12, atk: 0.08 } */
+  bonus: Partial<Record<'hp' | 'atk' | 'def' | 'spd' | 'crit', number>>;
+  /** legendary unique effect id */
+  special?: 'firstStrikeCrit' | 'critChance5' | 'roundOneShield' | 'executeLow';
+  specialDesc?: string;
 }
 
-export interface StageDefinition {
-  readonly stageNumber: number; // 1, 2, 3...
-  readonly chapter: number;
-  readonly stageInChapter: number; // 1..5
-  readonly isBossStage: boolean;
-  readonly label: string; // e.g. "1-5 БОСС"
-  readonly biome: StageBiome;
-  readonly enemies: BattleUnit[];
-  readonly goldReward: number;
-  readonly essenceReward: number;
-  readonly gemReward: number;
-  readonly relicStoneReward: number;
-  readonly idleGoldPerMin: number;
-  readonly idleEssencePerMin: number;
+export interface HeroState {
+  uid: string;
+  defId: string;
+  level: number;
+  rank: Rank;
+  /** universal shards banked for THIS hero (dupes convert here) */
+  copies: number;
+  equip: Partial<Record<EquipSlot, EquipItem>>;
+  /** Shadow Pact debuffs (14.4) */
+  pactHpBattles: number; // battles left with -20% HP
+  pactSilenceBattles: number; // battles left without skill casts
 }
 
-export interface SummonResultItem {
-  readonly heroId: string;
-  readonly isNew: boolean;
-  readonly shardsGranted: number;
-  readonly rarity: Rarity;
+/** Team layout: slots 0..1 = front row, 2..5 = back row. */
+export type TeamSlots = (string | null)[]; // 6 hero uids
+
+export interface AuraInfo {
+  id: string;
+  name: string;
+  desc: string;
+  mods: Partial<BaseStats & { healPower: number; controlImmunity: number }>;
 }
 
-export interface QuestDefinition {
-  readonly id: string;
-  readonly title: string;
-  readonly target: number;
-  readonly statKey: 'totalKills' | 'maxStage' | 'totalSummons' | 'highestHeroLevel' | 'towerFloor';
-  readonly rewardGems: number;
-  readonly rewardGold: number;
-  readonly rewardScrolls: number;
+export interface ComputedStats extends BaseStats {
+  healPower: number;
+  controlImmunity: number;
+}
+
+/* ------------------------------- Battle -------------------------------- */
+
+export type BattleEvent =
+  | { t: 'round'; n: number }
+  | { t: 'turn'; side: Side; unit: number }
+  | { t: 'cast'; side: Side; unit: number; skill: string } // visual "about to cast" marker
+  | { t: 'attack'; side: Side; unit: number; targetSide: Side; target: number }
+  | { t: 'damage'; side: Side; unit: number; targetSide: Side; target: number; amount: number; crit: boolean; blocked: number; targetDead: boolean }
+  | { t: 'heal'; side: Side; unit: number; amount: number }
+  | { t: 'shield'; side: Side; unit: number; amount: number }
+  | { t: 'buff'; side: Side; unit: number; text: string }
+  | { t: 'debuff'; side: Side; unit: number; text: string }
+  | { t: 'lifesteal'; side: Side; unit: number; amount: number }
+  | { t: 'death'; side: Side; unit: number }
+  | { t: 'revive'; side: Side; unit: number; hp: number } // Echo buff «Воскрешение»
+  | { t: 'end'; victory: boolean; rounds: number };
+
+export type Side = 'ally' | 'enemy';
+
+export interface BattleUnitSnapshot {
+  side: Side;
+  index: number; // 0..5, 0-1 front row
+  defId: string;
+  name: string;
+  emoji: string;
+  faction: Faction;
+  rarity: Rarity;
+  rank: Rank;
+  level: number;
+  hp: number;
+  maxHp: number;
+  isBoss?: boolean;
+}
+
+export interface BattleResult {
+  victory: boolean;
+  rounds: number;
+  events: BattleEvent[];
+  allies: BattleUnitSnapshot[];
+  enemies: BattleUnitSnapshot[];
+  fallenAllies: number; // heroes that died — feeds «Эхо павших»
+  fallenEnemies: number;
+  /** ally hero uids in slot order (for echo/pact bookkeeping) */
+  allyUids: (string | null)[];
+  firstHitDamage: number; // FTUE pause moment
+  powerAlly: number;
+  powerEnemy: number;
+}
+
+export interface BattleModifiers {
+  /** Echo of the Fallen active buff (14.1) */
+  echoBuff?: 'atk3' | 'hp1' | 'revive' | null;
+  /** Shadow Pact (14.4): index of allied slot with +30% damage this battle */
+  pactSlot?: number | null;
+  /** admin_force_win / admin_force_lose */
+  forceResult?: 'win' | 'lose' | null;
+  /** Mirror Labyrinth enemy modifiers (14.3) */
+  mirror?: { hpMult?: number; skillChanceMult?: number; noHealers?: boolean } | null;
+}
+
+/* ------------------------------ Meta state ------------------------------ */
+
+export type BuffKind = 'atk3' | 'hp1' | 'revive';
+
+export interface ActiveBuff {
+  kind: BuffKind;
+  battlesLeft: number;
+}
+
+export interface QuestState {
+  id: string;
+  progress: number;
+  target: number;
+  claimed: boolean;
+}
+
+export interface GameState {
+  saveVersion: number;
+  resources: {
+    gold: number;
+    heroExp: number; // shared exp pool spent on levels
+    crystals: number; // premium currency «Кристаллы Эха»
+    shards: number; // rare star-up currency
+    souls: number; // осколки душ (14.1 / 14.2), capped at 20
+    scrolls: number; // summon scrolls
+    fodder: number; // «еда» count (3★ fodder heroes abstracted as a count)
+  };
+  heroes: Record<string, HeroState>;
+  team: TeamSlots;
+  campaign: { stage: number; maxStage: number }; // stage = next to beat
+  tower: { floor: number; bestFloor: number; lastResetDay: string };
+  labyrinth: { unlocked: boolean; floor: number; weekKey: string; completedWeeks: number };
+  prestige: { ascensions: number; multiplier: number };
+  echo: { buff: ActiveBuff | null; totalEarned: number };
+  pact: { slot: number | null };
+  daily: { lastClaimDay: number; streak: number; lastClaimDate: string };
+  quests: { daily: QuestState[]; weekly: QuestState[]; dailyDate: string; weeklyKey: string };
+  diary: string[]; // unlocked entry ids (14.5)
+  pity: { premium: number }; // summons since last 5★
+  settings: { muted: boolean; theme: 'dark' | 'light' };
+  stats: {
+    battlesWon: number;
+    battlesLost: number;
+    kills: number;
+    summons: number;
+    upgrades: number;
+    forges: number;
+    adWatches: number;
+    firstPayment: boolean;
+  };
+  adsToday: { date: string; count: number };
+  codes: { used: string[]; history: { code: string; ok: boolean; at: number }[] };
+  ftue: { step: number; done: boolean };
+  goals: { id: string; progress: number }[];
+  lastSeen: number; // offline income anchor
+  inventory: EquipItem[]; // unequipped forged items
+  forcedNextResult: 'win' | 'lose' | null;
+  devFlags: { fps: boolean; hitboxes: boolean };
+  createdAt: number;
+}
+
+export interface RewardBundle {
+  gold?: number;
+  heroExp?: number;
+  crystals?: number;
+  shards?: number;
+  souls?: number;
+  scrolls?: number;
+  fodder?: number;
+  heroDefId?: string;
 }

@@ -1,104 +1,108 @@
-import { HERO_ROSTER, RARITY_META } from './heroes';
-import type { HeroTemplate, OwnedHero, Rarity, SummonResultItem } from './types';
+import type { HEROES } from './heroes';
+import { FOUR_STARS, FIVE_STARS, THREE_STARS } from './heroes';
+import { createRng } from './rng';
+import type { Rarity } from './types';
 
-export const SUMMON_RATES: Record<Rarity, number> = {
-  mythic: 0.05,
-  legendary: 0.15,
-  epic: 0.35,
-  rare: 0.45,
-};
+/**
+ * Summon (§5): two banners.
+ * - «Врата Эха» (ordinary): scrolls or gold; 3–5★, duplicates → shards/fodder.
+ * - «Высший призыв» (premium): crystals; guaranteed 4★+, pity 5★ at 50.
+ * Odds are public (shown behind the «i» button before summoning).
+ */
 
-export const SINGLE_SUMMON_GEMS = 150;
-export const TEN_SUMMON_GEMS = 1200;
-
-function pickRarity(
-  pityCounter: number,
-  guaranteedEpicOrHigher: boolean,
-  rng: () => number,
-): Rarity {
-  if (pityCounter >= 29) {
-    return rng() < 0.32 ? 'mythic' : 'legendary';
-  }
-  const roll = rng();
-  if (roll < SUMMON_RATES.mythic) return 'mythic';
-  if (roll < SUMMON_RATES.mythic + SUMMON_RATES.legendary) return 'legendary';
-  if (guaranteedEpicOrHigher || roll < SUMMON_RATES.mythic + SUMMON_RATES.legendary + SUMMON_RATES.epic) {
-    return 'epic';
-  }
-  return 'rare';
+export interface SummonOutcome {
+  heroId: string;
+  rarity: Rarity;
+  /** duplicate converted value: shards granted instead of a new hero */
+  duplicateShards: number;
+  isDuplicate: boolean;
+  /** 3★ duplicates become fodder («еда») */
+  isFodder: boolean;
 }
 
-function pickHeroOfRarity(rarity: Rarity, rng: () => number): HeroTemplate {
-  const matching = HERO_ROSTER.filter((h) => h.rarity === rarity);
-  const pool = matching.length > 0 ? matching : HERO_ROSTER;
-  const idx = Math.min(pool.length - 1, Math.floor(rng() * pool.length));
-  const chosen = pool[idx] ?? HERO_ROSTER[0];
-  if (!chosen) {
-    throw new Error('Roster cannot be empty');
+export const ORDINARY_RATES: { rarity: Rarity; p: number }[] = [
+  { rarity: 5, p: 0.05 },
+  { rarity: 4, p: 0.25 },
+  { rarity: 3, p: 0.7 },
+];
+
+export const PREMIUM_RATES: { rarity: Rarity; p: number }[] = [
+  { rarity: 5, p: 0.12 },
+  { rarity: 4, p: 0.88 },
+];
+
+export const PREMIUM_PITY = 50; // «До гарантированного 5★: N призывов»
+export const ORDINARY_COST_SCROLLS = 1;
+export const ORDINARY_COST_GOLD = 4000;
+export const PREMIUM_COST_CRYSTALS = 30;
+export const PREMIUM_10_COST_CRYSTALS = 270; // 10-pull discount
+export const DUPLICATE_SHARDS: Record<Rarity, number> = { 3: 2, 4: 8, 5: 30 };
+
+function pickRarity(rates: { rarity: Rarity; p: number }[], roll: number): Rarity {
+  let acc = 0;
+  for (const r of rates) {
+    acc += r.p;
+    if (roll < acc) return r.rarity;
   }
-  return chosen;
+  return rates[rates.length - 1]?.rarity ?? 3;
 }
 
-export function performSummonBatch(
-  count: 1 | 10,
-  currentOwned: Record<string, OwnedHero>,
-  initialPity: number,
-  rng: () => number = Math.random,
-): {
-  readonly nextOwned: Record<string, OwnedHero>;
-  readonly nextPity: number;
-  readonly results: SummonResultItem[];
-} {
-  const nextOwned: Record<string, OwnedHero> = { ...currentOwned };
-  let pity = initialPity;
-  const results: SummonResultItem[] = [];
-  let gotEpicOrBetter = false;
+function poolFor(rarity: Rarity): typeof HEROES {
+  if (rarity === 5) return FIVE_STARS;
+  if (rarity === 4) return FOUR_STARS;
+  return THREE_STARS;
+}
 
-  for (let i = 0; i < count; i += 1) {
-    const forceEpic = count === 10 && i === 9 && !gotEpicOrBetter;
-    const rarity = pickRarity(pity, forceEpic, rng);
+export interface SummonContext {
+  ownedDefIds: Set<string>;
+  pity: number; // premium summons since last 5★
+}
 
-    if (rarity === 'legendary' || rarity === 'mythic') {
-      pity = 0;
+export function summonOne(kind: 'ordinary' | 'premium', ctx: SummonContext, seed: number): { outcome: SummonOutcome; newPity: number } {
+  const rng = createRng(seed);
+  let rarity: Rarity;
+  let newPity = ctx.pity;
+
+  if (kind === 'premium') {
+    newPity = ctx.pity + 1;
+    if (newPity >= PREMIUM_PITY) {
+      rarity = 5; // guaranteed
+      newPity = 0;
     } else {
-      pity += 1;
+      rarity = pickRarity(PREMIUM_RATES, rng.next());
+      if (rarity === 5) newPity = 0;
     }
-
-    if (rarity !== 'rare') {
-      gotEpicOrBetter = true;
-    }
-
-    const tpl = pickHeroOfRarity(rarity, rng);
-    const meta = RARITY_META[tpl.rarity];
-    const existing = nextOwned[tpl.id];
-
-    if (!existing) {
-      nextOwned[tpl.id] = {
-        heroId: tpl.id,
-        level: 1,
-        stars: meta.baseStars,
-        shards: 0,
-        equip: { weapon: 0, armor: 0, ring: 0, relic: 0 },
-      };
-      results.push({
-        heroId: tpl.id,
-        isNew: true,
-        shardsGranted: 0,
-        rarity: tpl.rarity,
-      });
-    } else {
-      nextOwned[tpl.id] = {
-        ...existing,
-        shards: existing.shards + meta.dupShards,
-      };
-      results.push({
-        heroId: tpl.id,
-        isNew: false,
-        shardsGranted: meta.dupShards,
-        rarity: tpl.rarity,
-      });
-    }
+  } else {
+    rarity = pickRarity(ORDINARY_RATES, rng.next());
   }
 
-  return { nextOwned, nextPity: pity, results };
+  const pool = poolFor(rarity);
+  const hero = pool[rng.int(0, pool.length - 1)] ?? pool[0] ?? THREE_STARS[0];
+  if (!hero) throw new Error('summon pool is empty');
+
+  const isDuplicate = ctx.ownedDefIds.has(hero.id);
+  const isFodder = rarity === 3;
+  return {
+    outcome: {
+      heroId: hero.id,
+      rarity,
+      duplicateShards: DUPLICATE_SHARDS[rarity],
+      isDuplicate,
+      isFodder,
+    },
+    newPity: kind === 'premium' ? newPity : ctx.pity,
+  };
+}
+
+export function summonTen(kind: 'ordinary' | 'premium', ctx: SummonContext, seed: number): { outcomes: SummonOutcome[]; newPity: number } {
+  const outcomes: SummonOutcome[] = [];
+  let pity = ctx.pity;
+  const owned = new Set(ctx.ownedDefIds);
+  for (let i = 0; i < 10; i++) {
+    const r = summonOne(kind, { ownedDefIds: owned, pity }, seed + i * 7717);
+    outcomes.push(r.outcome);
+    pity = r.newPity;
+    owned.add(r.outcome.heroId);
+  }
+  return { outcomes, newPity: pity };
 }
