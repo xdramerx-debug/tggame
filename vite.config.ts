@@ -19,10 +19,8 @@ export default defineConfig({
       output: {
         manualChunks(id: string): string | undefined {
           if (!id.includes('node_modules')) return undefined;
-          if (id.includes('framer-motion')) return 'motion';
-          if (id.includes('lucide-react')) return 'icons';
+          if (id.includes('node_modules/three')) return 'three';
           if (id.includes('node_modules/react')) return 'react';
-          if (id.includes('@telegram-apps')) return 'telegram';
           return undefined;
         },
       },

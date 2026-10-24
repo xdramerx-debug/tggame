@@ -1,4 +1,4 @@
-name: Deploy Echo Chronicles
+name: Deploy Dead Zone
 
 on:
   push:

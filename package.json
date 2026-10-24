@@ -1,9 +1,9 @@
 {
-  "name": "echo-chronicles",
+  "name": "dead-zone",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Хроники Эха — мобильная idle RPG для Telegram Mini App: отряд из 6 героев, 6 фракций, ауры, «Эхо павших», «Кузница душ», «Лабиринт отражений», «Пакт с тенью» и «Дневник странника»",
+  "description": "Мёртвая зона — мобильный 3D-шутер от третьего лица: выживание среди волн зомби в заброшенном комплексе (Three.js, тач-управление)",
   "engines": {
     "node": ">=22.12"
   },
@@ -20,11 +20,9 @@
     "check:dist": "node scripts/check-dist.mjs"
   },
   "dependencies": {
-    "@telegram-apps/sdk": "^3.11.8",
-    "framer-motion": "^11.18.2",
-    "lucide-react": "^1.16.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "three": "^0.186.1",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -34,13 +32,11 @@
     "@types/node": "^22.19.0",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "autoprefixer": "^10.6.1",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^30.1.3",
-    "postcss": "^8.5.31",
-    "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.0",
     "vite": "^8.3.5",
