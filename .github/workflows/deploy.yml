@@ -1,4 +1,4 @@
-name: Deploy Astral Legion
+name: Deploy Echo Chronicles
 
 on:
   push:
