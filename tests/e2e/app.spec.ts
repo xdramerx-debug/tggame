@@ -20,15 +20,10 @@ async function bootToHome(page: Page): Promise<void> {
   await expect(battleBtn(page)).toBeVisible({ timeout: 20_000 });
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    try {
-      window.localStorage.clear();
-    } catch {
-      // ignore
-    }
-  });
-});
+// Каждый тест получает свежий браузер-контекст (изолированный localStorage),
+// поэтому принудительная очистка не нужна. Важно НЕ вешать localStorage.clear()
+// через addInitScript: он срабатывает на КАЖДУЮ навигацию, включая page.reload(),
+// и стирает сейв прямо посреди теста на персистентность.
 
 test('FTUE: первый бой с паузой, победа, улучшение героя, призыв, персист', async ({ page }) => {
   await bootToHome(page);
