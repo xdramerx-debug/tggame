@@ -49,9 +49,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
-      - run: npx playwright test --project=${{ matrix.project }}
+      - name: Run e2e
+        shell: bash
+        run: |
+          set -o pipefail
+          npx playwright test --project=${{ matrix.project }} 2>&1 | tee pw-output.txt
         env:
           CI: '1'
+      - if: failure()
+        name: Publish failure log to step summary
+        run: |
+          {
+            echo '## E2E failure — ${{ matrix.project }}'
+            echo '```'
+            tail -n 150 pw-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
