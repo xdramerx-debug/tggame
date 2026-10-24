@@ -697,3 +697,15 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* Battle intro splash (§7 readability): brief «⚔️ stage name» before playback */
+.battle-intro {
+  position: absolute; inset: 0; z-index: 40;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  background: radial-gradient(circle at 50% 40%, rgba(30, 20, 60, 0.82), rgba(5, 8, 18, 0.94));
+  animation: introFade 1.4s ease forwards; pointer-events: none;
+}
+.battle-intro-vs { font-size: 64px; animation: introPop 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both; filter: drop-shadow(0 0 18px rgba(245, 158, 11, 0.7)); }
+.battle-intro-name { font-weight: 900; font-size: 18px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gold); text-align: center; padding: 0 24px; }
+@keyframes introPop { from { transform: scale(0.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes introFade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }

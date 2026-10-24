@@ -63,6 +63,7 @@ export function BattleScreen(): ReactElement {
   const [banner, setBanner] = useState<string | null>(null);
   const [round, setRound] = useState(1);
   const [shaking, setShaking] = useState(false);
+  const [intro, setIntro] = useState(true);
   const pausedRef = useRef(false);
   const doneRef = useRef(false);
 
@@ -71,6 +72,8 @@ export function BattleScreen(): ReactElement {
     if (!result) return;
     doneRef.current = false;
     pausedRef.current = false;
+    setIntro(true);
+    const introTimer = window.setTimeout(() => { setIntro(false); }, 1400);
     setCursor(0);
     setRound(1);
     setFloats([]);
@@ -79,6 +82,7 @@ export function BattleScreen(): ReactElement {
       ally: result.allies.map(toView),
       enemy: result.enemies.map(toView),
     });
+    return () => { window.clearTimeout(introTimer); };
   }, [result]);
 
   const pushFloat = useCallback((side: Side, unit: number, text: string, cls: string) => {
@@ -165,6 +169,7 @@ export function BattleScreen(): ReactElement {
   // playback loop
   useEffect(() => {
     if (!result || !battle || battle.finished) return;
+    if (intro) return; // сперва заставка «⚔️», затем проигрывание
     if (cursor >= result.events.length) return;
     // FTUE-пауза снимается кнопкой «Понятно, дальше!» — продолжаем проигрывание
     if (!ftuePause) pausedRef.current = false;
@@ -195,7 +200,7 @@ export function BattleScreen(): ReactElement {
       }
     }, delay);
     return () => { window.clearTimeout(timer); };
-  }, [cursor, result, battle, speed, ftuePause, applyEvent, finishBattle]);
+  }, [cursor, result, battle, speed, intro, ftuePause, applyEvent, finishBattle]);
 
   const rewards = battle?.granted ?? null;
   const finished = battle?.finished === true;
@@ -215,6 +220,12 @@ export function BattleScreen(): ReactElement {
 
   return (
     <div className="col" style={{ height: '100%', position: 'relative' }}>
+      {intro && !finished ? (
+        <div className="battle-intro">
+          <div className="battle-intro-vs">⚔️</div>
+          <div className="battle-intro-name">{battle.stageDef.name}</div>
+        </div>
+      ) : null}
       {/* header */}
       <div className="row-between" style={{ padding: '8px 12px 0' }}>
         <div className="small" style={{ fontWeight: 800 }}>{battle.stageDef.name}</div>

@@ -74,7 +74,7 @@ describe('app smoke', () => {
       useGameStore.getState().submitCode('admin_force_win');
       useGameStore.getState().startBattle('campaign');
     });
-    await advance(4000);
+    await advance(6000);
     expect(screen.getByText(/Твой герой атакует/)).toBeTruthy();
     expect(useGameStore.getState().ftuePause).toBe(true);
     await user.click(screen.getByRole('button', { name: 'Понятно, дальше!' }));
