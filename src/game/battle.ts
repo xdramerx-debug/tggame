@@ -121,7 +121,7 @@ function snapshot(units: LiveUnit[]): BattleUnitSnapshot[] {
     rarity: u.input.def.rarity,
     rank: (u.input.rank ?? '5') as BattleUnitSnapshot['rank'],
     level: u.input.level ?? 1,
-    hp: u.maxHp,
+    hp: Math.max(0, u.hp), // final HP; replay UI initializes from maxHp
     maxHp: u.maxHp,
     isBoss: u.input.isBoss,
   }));

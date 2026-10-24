@@ -30,8 +30,8 @@ interface FloatNumber {
 }
 
 const EVENT_MS: Record<BattleEvent['t'], number> = {
-  round: 420, turn: 60, cast: 950, attack: 340, damage: 300, heal: 360,
-  shield: 300, buff: 320, debuff: 320, lifesteal: 240, death: 460, revive: 700, end: 100,
+  round: 520, turn: 120, cast: 1000, attack: 400, damage: 350, heal: 400,
+  shield: 340, buff: 360, debuff: 360, lifesteal: 280, death: 520, revive: 750, end: 120,
 };
 
 let floatSeq = 0;

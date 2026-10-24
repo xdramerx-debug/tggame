@@ -687,3 +687,13 @@ body {
 .ad-count { font-size: 44px; font-weight: 900; animation: adCount 1s ease infinite; }
 
 .long-press-target { cursor: pointer; }
+
+/* §13 polish: respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

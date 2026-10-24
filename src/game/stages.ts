@@ -54,10 +54,13 @@ export const BOSS_NAMES = [
 /** Difficulty curve: enemy stat budget grows ~12.5% per stage (matches player growth). */
 function stageBudget(stage: number): { level: number; rank: Rank; mult: number } {
   const level = Math.min(100, 1 + Math.floor(stage * 0.7));
-  const rankIdx = Math.min(15, Math.floor(stage / 8));
+  const rankIdx = Math.min(15, Math.floor(stage / 12));
   const ranks: Rank[] = [5, 6, 7, 8, 9, 10, 'E1', 'E2', 'E3', 'E4', 'E5', 'T1', 'T2', 'T3', 'T4', 'T5'];
   const rank = ranks[rankIdx] ?? 5;
-  const mult = Math.pow(1.045, stage); // extra compounding on top of level/rank
+  // Linear stat budget on top of level/rank; early stages are deliberately
+  // softer (single starter hero). Growth must stay beatable by meta investment
+  // (auras/forge/stars/echo give roughly ×1.3–2.0 total), hence +2%/stage, not exponential.
+  const mult = (1 + stage * 0.02) * (stage <= 2 ? 0.8 : 1);
   return { level, rank, mult };
 }
 
@@ -75,8 +78,8 @@ function enemyHeroFor(e: EnemyDef): BattleUnitInput {
     rank: String(e.rank),
     stats: {
       ...stats,
-      hp: Math.round(stats.hp * m * (e.isBoss ? 2.6 : 1)),
-      atk: Math.round(stats.atk * m * (e.isBoss ? 1.35 : 1)),
+      hp: Math.round(stats.hp * m * (e.isBoss ? 2 : 1)),
+      atk: Math.round(stats.atk * m * (e.isBoss ? 1.2 : 1)),
       def: Math.round(stats.def * m * (e.isBoss ? 1.2 : 1)),
     },
   };
@@ -87,12 +90,13 @@ export function buildStage(stage: number, seed = stage * 7919): StageDef {
   const { level, rank, mult } = stageBudget(stage);
   const boss = stage % 10 === 0;
   const { chapter } = chapterOf(stage);
-  const count = boss ? 4 : Math.min(6, 3 + Math.floor(stage / 6));
+  // Early stages match a small roster: 1 enemy at stage 1–2, +1 every 3 stages (§13: first battle must be winnable)
+  const count = boss ? 4 : Math.min(6, 1 + Math.floor(stage / 3));
 
   const enemies: EnemyDef[] = [];
   if (boss) {
     const bossDef = must(HEROES.filter((h) => h.rarity === 5)[(chapter - 1) % 8] ?? HEROES[0], 'no boss def');
-    enemies.push({ def: bossDef, level: level + 3, rank, isBoss: true, statMult: mult });
+    enemies.push({ def: bossDef, level: level + 2, rank, isBoss: true, statMult: mult });
   }
   while (enemies.length < count) {
     const pool = boss ? HEROES.filter((h) => h.rarity >= 4) : HEROES;

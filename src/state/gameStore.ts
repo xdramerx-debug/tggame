@@ -424,8 +424,11 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       };
     });
 
-    const result = simulateBattle({ allies: allyUnits, enemies: enemyUnits, seed: seedFromTime(), modifiers: mods });
     const ftueBattle = !game.ftue.done && (game.ftue.step === 1 || game.ftue.step === 3);
+    // FTUE-бои всегда выигрываются (§9): обучение не должно ломаться рандомом
+    // (явные dev/admin-команды force_win/force_lose имеют приоритет)
+    if (ftueBattle && !mods.forceResult) mods.forceResult = 'win';
+    const result = simulateBattle({ allies: allyUnits, enemies: enemyUnits, seed: seedFromTime(), modifiers: mods });
 
     track('battle_start', { mode, stage: stageDef.stage });
     set({
