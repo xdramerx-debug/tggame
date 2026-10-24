@@ -49,7 +49,7 @@ test('FTUE: первый бой с паузой, победа, улучшени�
   await expect(page.getByText('Уровень 1 / 20')).toBeVisible();
   await page.getByRole('button', { name: /Улучшить \+1/ }).click();
   await expect(page.getByText('Уровень 2 / 20')).toBeVisible();
-  await page.getByRole('button', { name: '✕' }).click();
+  await page.getByRole('button', { name: 'Закрыть' }).click();
 
   // Squad screen: front row explained
   await nav(page, 'Отряд').click();
@@ -61,7 +61,7 @@ test('FTUE: первый бой с паузой, победа, улучшени�
   await page.getByRole('button', { name: /Вероятности/ }).click();
   await expect(page.getByText('Вероятности призыва')).toBeVisible();
   await expect(page.getByText(/Гарант \(pity\)/)).toBeVisible();
-  await page.getByRole('button', { name: '✕' }).click();
+  await page.getByRole('button', { name: 'Закрыть' }).click();
   await page.getByText('Призыв x1').first().click();
   await expect(page.getByText('Результат призыва')).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Забрать' }).click();
@@ -89,7 +89,7 @@ test('FTUE battle #2 goes faster: no pause on the second fight', async ({ page }
   await page.getByText('Велес Тёмный').first().click();
   await page.getByRole('button', { name: /Улучшить \+1/ }).click();
   await expect(page.getByText('Уровень 2 / 20')).toBeVisible();
-  await page.getByRole('button', { name: '✕' }).click();
+  await page.getByRole('button', { name: 'Закрыть' }).click();
 
   // Battle #2: starts on the home CTA, plays through WITHOUT the first-hit pause
   await nav(page, 'Бой').click();
