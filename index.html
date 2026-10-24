@@ -6,35 +6,35 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#070a16" />
-    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0a0e14" />
+    <meta name="color-scheme" content="dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta
       name="description"
-      content="Хроники Эха — мобильная idle RPG для Telegram Mini App: отряд из 6 героев, 6 фракций, ауры, Кузница душ и Эхо павших."
+      content="Мёртвая зона — мобильный 3D-шутер от третьего лица: отбивайся от волн зомби в заброшенном комплексе."
     />
-    <title>Хроники Эха — idle RPG</title>
+    <title>Мёртвая зона — 3D шутер</title>
     <style>
-      /* Instant splash (§13 load <5s): shows before JS boots, replaced by React on mount */
-      html, body { margin: 0; background: #070a16; }
+      /* Instant splash: shows before JS boots, replaced on mount */
+      html, body { margin: 0; background: #0a0e14; }
       #splash {
         position: fixed; inset: 0; display: flex; flex-direction: column;
         align-items: center; justify-content: center; gap: 14px;
-        background: radial-gradient(circle at 50% 35%, #1a1333 0%, #070a16 70%);
-        color: #e7e2f5; font-family: system-ui, -apple-system, sans-serif;
+        background: radial-gradient(circle at 50% 35%, #1a2030 0%, #0a0e14 70%);
+        color: #cdd6e4; font-family: system-ui, -apple-system, sans-serif;
       }
       #splash .orb { font-size: 64px; animation: splashFloat 2.4s ease-in-out infinite; }
-      #splash .name { font-weight: 800; letter-spacing: 0.08em; color: #c084fc; }
+      #splash .name { font-weight: 900; letter-spacing: 0.14em; color: #e11d48; text-transform: uppercase; }
       #splash .dots::after { content: '…'; animation: splashDots 1.2s steps(4) infinite; }
       @keyframes splashFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
       @keyframes splashDots { from { opacity: 0.2; } to { opacity: 1; } }
     </style>
   </head>
   <body>
-    <div id="root"><div id="splash"><div class="orb">🔮</div><div class="name">ХРОНИКИ ЭХА</div><div class="muted dots">Пробуждение</div></div></div>
-    <noscript>Для запуска «Хроник Эха» необходим JavaScript.</noscript>
+    <div id="root"><div id="splash"><div class="orb">🧟</div><div class="name">Мёртвая зона</div><div class="dots">Прорыв периметра</div></div></div>
+    <noscript>Для запуска «Мёртвой зоны» необходим JavaScript.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

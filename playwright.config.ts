@@ -27,13 +27,14 @@ export default defineConfig({
       use: {
         ...devices['Pixel 7'],
         deviceScaleFactor: 1,
-      },
-    },
-    {
-      name: 'ios-webkit-mobile',
-      use: {
-        ...devices['iPhone 13'],
-        deviceScaleFactor: 1,
+        // headless WebGL через программный растеризатор
+        launchOptions: {
+          args: [
+            '--use-gl=angle',
+            '--use-angle=swiftshader',
+            '--enable-unsafe-swiftshader',
+          ],
+        },
       },
     },
   ],

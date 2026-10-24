@@ -2,8 +2,9 @@
 /**
  * Bundle budget gate.
  *
- * Astral Legion targets mobile browsers and Telegram WebViews over cellular,
- * keeping total gzipped bundle payload lean and instant to load.
+ * Dead Zone targets mobile browsers over cellular: total payload stays lean.
+ * The `three` chunk carries the 3D engine, so the per-chunk budget is set to
+ * fit Three.js core (tree-shaken) with headroom.
  */
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
@@ -11,7 +12,7 @@ import path from 'node:path';
 
 const DIST = path.resolve('dist/assets');
 const TOTAL_BUDGET_KB = 420;
-const CHUNK_BUDGET_KB = 170;
+const CHUNK_BUDGET_KB = 220;
 
 const files = await readdir(DIST).catch(() => []);
 if (files.length === 0) {
