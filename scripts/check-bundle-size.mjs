@@ -2,7 +2,7 @@
 /**
  * Bundle budget gate.
  *
- * Dead Zone targets mobile browsers over cellular: total payload stays lean.
+ * Khamsin targets mobile browsers over cellular: total payload stays lean.
  * The `three` chunk carries the 3D engine, so the per-chunk budget is set to
  * fit Three.js core (tree-shaken) with headroom.
  */

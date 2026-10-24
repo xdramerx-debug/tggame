@@ -1,5 +1,7 @@
-/** Seeded PRNG (mulberry32) — deterministic drops/spawns in tests and replays. */
-export function createRng(seed: number): () => number {
+/** Seeded PRNG (mulberry32) — deterministic loot/spawns in tests. */
+export type Rng = () => number;
+
+export function createRng(seed: number): Rng {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -16,6 +18,10 @@ export function seedFromTime(): number {
 
 export function randRange(r: () => number, min: number, max: number): number {
   return min + r() * (max - min);
+}
+
+export function randInt(r: () => number, min: number, max: number): number {
+  return min + Math.floor(r() * (max - min + 1));
 }
 
 export function pick<T>(r: () => number, list: readonly T[]): T {

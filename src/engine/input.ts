@@ -1,173 +1,229 @@
 /**
- * Touch-first input (§ mobile only): left half — dynamic virtual joystick,
- * right half — camera drag, DOM buttons for fire/dash/reload.
- * Pointer Events also cover mouse (desktop preview); hidden WASD fallback.
+ * Ввод «Хамсина»: левая зона — динамический джойстик (край = спринт),
+ * правая зона — свайп-прицел, кнопки вызывают методы напрямую из React.
+ * Клавиатура/мышь — десктопный фолбэк.
  */
 
 export interface InputSnapshot {
-  /** normalized move vector, y is forward (+1) */
   moveX: number;
   moveY: number;
+  sprint: boolean;
   fireHeld: boolean;
-  dashQueued: boolean;
-  reloadQueued: boolean;
+  crouched: boolean;
 }
 
-const JOYSTICK_RADIUS = 62;
+interface Queued {
+  jump: boolean;
+  reload: boolean;
+  grenade: boolean;
+  medkit: boolean;
+  dash: boolean;
+  crouchToggle: boolean;
+  pause: boolean;
+}
+
+const JOY_RADIUS = 62;
+const SPRINT_EDGE = 0.92;
 
 export class InputManager {
-  moveX = 0;
-  moveY = 0;
-  fireHeld = false;
-  dashQueued = false;
-  reloadQueued = false;
-  /** camera look deltas, consumed each frame */
-  lookX = 0;
-  lookY = 0;
-
-  private host: HTMLElement | null = null;
-  private base: HTMLDivElement | null = null;
-  private knob: HTMLDivElement | null = null;
-  private pointers = new Map<number, { mode: 'move' | 'look'; ox: number; oy: number; lx: number; ly: number }>();
+  lookSensitivity = 0.0034;
+  private left: HTMLElement | null = null;
+  private right: HTMLElement | null = null;
+  private joyId = -1;
+  private lookId = -1;
+  private joyOrigin = { x: 0, y: 0 };
+  private move = { x: 0, y: 0 };
+  private mag = 0;
+  private look = { dx: 0, dy: 0 };
   private keys = new Set<string>();
-
-  private readonly onDown = (e: PointerEvent): void => {
-    if (!this.host) return;
-    const rect = this.host.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    if (x < rect.width * 0.45 && !this.pointers.has(e.pointerId)) {
-      this.pointers.set(e.pointerId, { mode: 'move', ox: x, oy: y, lx: x, ly: y });
-      this.showStick(x, y);
-      this.host.setPointerCapture(e.pointerId);
-    } else if (!this.pointers.has(e.pointerId)) {
-      this.pointers.set(e.pointerId, { mode: 'look', ox: x, oy: y, lx: x, ly: y });
-      this.host.setPointerCapture(e.pointerId);
-    }
-    e.preventDefault();
+  private mouseLookDown = false;
+  private fireHeld = false;
+  private crouched = false;
+  private queued: Queued = {
+    jump: false, reload: false, grenade: false, medkit: false,
+    dash: false, crouchToggle: false, pause: false,
   };
 
-  private readonly onMove = (e: PointerEvent): void => {
-    const p = this.pointers.get(e.pointerId);
-    if (!p || !this.host) return;
-    const rect = this.host.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    if (p.mode === 'move') {
-      const dx = x - p.ox;
-      const dy = y - p.oy;
-      const len = Math.hypot(dx, dy);
-      const k = len > JOYSTICK_RADIUS ? JOYSTICK_RADIUS / len : 1;
-      this.moveX = (dx * k) / JOYSTICK_RADIUS;
-      this.moveY = (-dy * k) / JOYSTICK_RADIUS;
-      this.moveStick(dx * k, dy * k);
+  private onDown = (zone: 'left' | 'right', e: PointerEvent): void => {
+    if (zone === 'left') {
+      if (this.joyId >= 0) return;
+      this.joyId = e.pointerId;
+      this.joyOrigin = { x: e.clientX, y: e.clientY };
+      this.move = { x: 0, y: 0 };
+      this.mag = 0;
+      e.preventDefault();
     } else {
-      this.lookX += x - p.lx;
-      this.lookY += y - p.ly;
+      if (this.lookId >= 0) return;
+      this.lookId = e.pointerId;
+      this.lastLookX = e.clientX;
+      this.lastLookY = e.clientY;
+      e.preventDefault();
     }
-    p.lx = x;
-    p.ly = y;
-    e.preventDefault();
   };
 
-  private readonly onUp = (e: PointerEvent): void => {
-    const p = this.pointers.get(e.pointerId);
-    if (p?.mode === 'move') {
-      this.moveX = 0;
-      this.moveY = 0;
-      this.hideStick();
+  private leftDown = (e: PointerEvent): void => { this.onDown('left', e); };
+  private rightDown = (e: PointerEvent): void => { this.onDown('right', e); };
+  private noMenu = (e: Event): void => { e.preventDefault(); };
+
+  private onMove = (e: PointerEvent): void => {
+    if (e.pointerId === this.joyId) {
+      const dx = e.clientX - this.joyOrigin.x;
+      const dy = e.clientY - this.joyOrigin.y;
+      const dist = Math.hypot(dx, dy);
+      this.mag = Math.min(1, dist / JOY_RADIUS);
+      if (dist > 6) {
+        this.move = { x: (dx / dist) * this.mag, y: (dy / dist) * this.mag };
+      } else {
+        this.move = { x: 0, y: 0 };
+      }
+      e.preventDefault();
+    } else if (e.pointerId === this.lookId) {
+      this.look.dx += e.movementX || e.clientX - (this.lastLookX ?? e.clientX);
+      this.look.dy += e.movementY || e.clientY - (this.lastLookY ?? e.clientY);
+      this.lastLookX = e.clientX;
+      this.lastLookY = e.clientY;
+      e.preventDefault();
     }
-    this.pointers.delete(e.pointerId);
   };
 
-  private readonly onKeyDown = (e: KeyboardEvent): void => {
+  private lastLookX: number | null = null;
+  private lastLookY: number | null = null;
+
+  private onUp = (e: PointerEvent): void => {
+    if (e.pointerId === this.joyId) {
+      this.joyId = -1;
+      this.move = { x: 0, y: 0 };
+      this.mag = 0;
+    } else if (e.pointerId === this.lookId) {
+      this.lookId = -1;
+      this.lastLookX = null;
+      this.lastLookY = null;
+    }
+  };
+
+  private onKeyDown = (e: KeyboardEvent): void => {
+    if (e.repeat) return;
     this.keys.add(e.code);
-    if (e.code === 'Space') { this.dashQueued = true; e.preventDefault(); }
-    if (e.code === 'KeyR') this.reloadQueued = true;
+    switch (e.code) {
+      case 'Space': this.queued.jump = true; e.preventDefault(); break;
+      case 'KeyR': this.queued.reload = true; break;
+      case 'KeyG': this.queued.grenade = true; break;
+      case 'KeyH': this.queued.medkit = true; break;
+      case 'KeyQ': this.queued.dash = true; break;
+      case 'KeyC': this.queued.crouchToggle = true; break;
+      case 'Escape': case 'KeyP': this.queued.pause = true; break;
+      default: break;
+    }
   };
 
-  private readonly onKeyUp = (e: KeyboardEvent): void => {
+  private onKeyUp = (e: KeyboardEvent): void => {
     this.keys.delete(e.code);
   };
 
-  attach(host: HTMLElement): void {
-    this.host = host;
-    host.style.touchAction = 'none';
+  private onMouseDown = (e: MouseEvent): void => {
+    if (e.button === 0) this.fireHeld = true;
+    if (e.button === 2) this.mouseLookDown = true;
+  };
 
-    this.base = document.createElement('div');
-    this.base.className = 'stick-base';
-    this.knob = document.createElement('div');
-    this.knob.className = 'stick-knob';
-    this.base.appendChild(this.knob);
-    host.appendChild(this.base);
+  private onMouseUp = (e: MouseEvent): void => {
+    if (e.button === 0) this.fireHeld = false;
+    if (e.button === 2) this.mouseLookDown = false;
+  };
 
-    host.addEventListener('pointerdown', this.onDown);
-    host.addEventListener('pointermove', this.onMove);
-    host.addEventListener('pointerup', this.onUp);
-    host.addEventListener('pointercancel', this.onUp);
+  private onMouseMove = (e: MouseEvent): void => {
+    if (this.mouseLookDown) {
+      this.look.dx += e.movementX;
+      this.look.dy += e.movementY;
+    }
+  };
+
+  private onBlur = (): void => {
+    this.keys.clear();
+    this.fireHeld = false;
+    this.mouseLookDown = false;
+    this.joyId = -1;
+    this.lookId = -1;
+    this.move = { x: 0, y: 0 };
+  };
+
+  attach(left: HTMLElement, right: HTMLElement, canvas: HTMLElement): void {
+    this.detach();
+    this.left = left;
+    this.right = right;
+    left.addEventListener('pointerdown', this.leftDown);
+    right.addEventListener('pointerdown', this.rightDown);
+    right.addEventListener('contextmenu', this.noMenu);
+    window.addEventListener('pointermove', this.onMove, { passive: false });
+    window.addEventListener('pointerup', this.onUp);
+    window.addEventListener('pointercancel', this.onUp);
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.onBlur);
+    canvas.addEventListener('mousedown', this.onMouseDown);
+    window.addEventListener('mouseup', this.onMouseUp);
+    window.addEventListener('mousemove', this.onMouseMove);
   }
 
   detach(): void {
-    if (!this.host) return;
-    this.host.removeEventListener('pointerdown', this.onDown);
-    this.host.removeEventListener('pointermove', this.onMove);
-    this.host.removeEventListener('pointerup', this.onUp);
-    this.host.removeEventListener('pointercancel', this.onUp);
+    if (this.left) this.left.removeEventListener('pointerdown', this.leftDown);
+    if (this.right) this.right.removeEventListener('pointerdown', this.rightDown);
+    if (this.right) this.right.removeEventListener('contextmenu', this.noMenu);
+    window.removeEventListener('pointermove', this.onMove);
+    window.removeEventListener('pointerup', this.onUp);
+    window.removeEventListener('pointercancel', this.onUp);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
-    this.base?.remove();
-    this.base = null;
-    this.knob = null;
-    this.host = null;
-    this.pointers.clear();
+    window.removeEventListener('blur', this.onBlur);
+    window.removeEventListener('mouseup', this.onMouseUp);
+    window.removeEventListener('mousemove', this.onMouseMove);
+    this.left = null;
+    this.right = null;
   }
 
-  /** Keyboard (WASD/arrows) folded into the move vector — desktop preview only. */
-  read(): InputSnapshot {
-    let mx = this.moveX;
-    let my = this.moveY;
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) my = Math.max(my, 1);
-    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) my = Math.min(my, -1);
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) mx = Math.min(mx, -1);
-    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) mx = Math.max(mx, 1);
-    return { moveX: mx, moveY: my, fireHeld: this.fireHeld, dashQueued: this.dashQueued, reloadQueued: this.reloadQueued };
+  snapshot(): InputSnapshot {
+    let mx = this.move.x;
+    let my = -this.move.y; // экранный Y вниз → «вперёд» положителен
+    let sprint = this.mag > SPRINT_EDGE;
+    const k = this.keys;
+    if (k.has('KeyW') || k.has('ArrowUp')) my += 1;
+    if (k.has('KeyS') || k.has('ArrowDown')) my -= 1;
+    if (k.has('KeyA') || k.has('ArrowLeft')) mx -= 1;
+    if (k.has('KeyD') || k.has('ArrowRight')) mx += 1;
+    if (k.has('ShiftLeft') || k.has('ShiftRight')) sprint = true;
+    const len = Math.hypot(mx, my);
+    if (len > 1) { mx /= len; my /= len; }
+    return {
+      moveX: mx,
+      moveY: my,
+      sprint,
+      fireHeld: this.fireHeld || k.has('Enter'),
+      crouched: this.crouched,
+    };
   }
 
-  consumeLook(): { x: number; y: number } {
-    const out = { x: this.lookX, y: this.lookY };
-    this.lookX = 0;
-    this.lookY = 0;
-    return out;
-  }
-
-  consumeDash(): boolean {
-    const d = this.dashQueued;
-    this.dashQueued = false;
+  consumeLook(): { dx: number; dy: number } {
+    const d = { dx: this.look.dx * this.lookSensitivity, dy: this.look.dy * this.lookSensitivity };
+    this.look.dx = 0;
+    this.look.dy = 0;
     return d;
   }
 
-  consumeReload(): boolean {
-    const r = this.reloadQueued;
-    this.reloadQueued = false;
-    return r;
+  takeQueued(): Queued {
+    const q = { ...this.queued };
+    this.queued = {
+      jump: false, reload: false, grenade: false, medkit: false,
+      dash: false, crouchToggle: false, pause: false,
+    };
+    return q;
   }
 
-  private showStick(x: number, y: number): void {
-    if (!this.base || !this.knob) return;
-    this.base.style.display = 'block';
-    this.base.style.left = `${x}px`;
-    this.base.style.top = `${y}px`;
-    this.knob.style.transform = 'translate(-50%, -50%)';
-  }
-
-  private moveStick(dx: number, dy: number): void {
-    if (!this.knob) return;
-    this.knob.style.transform = `translate(calc(-50% + ${dx.toFixed(1)}px), calc(-50% + ${dy.toFixed(1)}px))`;
-  }
-
-  private hideStick(): void {
-    if (this.base) this.base.style.display = 'none';
-  }
+  setFire(v: boolean): void { this.fireHeld = v; }
+  pressJump(): void { this.queued.jump = true; }
+  pressCrouch(): void { this.queued.crouchToggle = true; }
+  pressReload(): void { this.queued.reload = true; }
+  pressGrenade(): void { this.queued.grenade = true; }
+  pressMedkit(): void { this.queued.medkit = true; }
+  pressDash(): void { this.queued.dash = true; }
+  pressPause(): void { this.queued.pause = true; }
+  applyCrouch(v: boolean): void { this.crouched = v; }
 }

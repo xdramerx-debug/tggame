@@ -1,262 +1,394 @@
 import * as THREE from 'three';
-import { ARENA, WEAPON } from '../game/types';
-import type { Zombie } from './zombie';
-import type { ParticleSystem } from './particles';
+import { PLAYER } from '../game/types';
+import type { Enemy } from './enemy';
+import type { Collider } from './collide';
 
 /**
- * Hitscan weapon: pooled tracers, muzzle flash light, ray-sphere hit tests
- * (cheaper than Raycaster), aim assist that snaps to the nearest zombie cone.
+ * Хитскан-разрешение выстрелов: луч против голов/тел врагов,
+ * 3D-боксов, цилиндров и земли; трассеры и пулевые следы.
  */
 
-const TRACER_COUNT = 12;
-const TRACER_TTL = 0.06;
-
-export interface ShotResult {
-  zombie: Zombie | null;
-  headshot: boolean;
-  point: THREE.Vector3;
-  killed: boolean;
+export interface EnemyHitInfo {
+  enemy: Enemy;
+  head: boolean;
+  t: number;
 }
 
-interface Tracer {
-  mesh: THREE.Mesh;
-  mat: THREE.MeshBasicMaterial;
-  ttl: number;
+export interface EnvHitInfo {
+  t: number;
+  x: number;
+  y: number;
+  z: number;
+  nx: number;
+  ny: number;
+  nz: number;
 }
 
-function flashTexture(): THREE.Texture {
-  const size = 64;
-  const cv = document.createElement('canvas');
-  cv.width = size;
-  cv.height = size;
-  const g = cv.getContext('2d');
-  if (g) {
-    const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-    grad.addColorStop(0, 'rgba(255,255,235,1)');
-    grad.addColorStop(0.25, 'rgba(255,205,110,0.85)');
-    grad.addColorStop(1, 'rgba(255,150,50,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, size, size);
-  }
-  const tex = new THREE.CanvasTexture(cv);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+export interface PelletResult {
+  enemy: EnemyHitInfo | null;
+  env: EnvHitInfo | null;
+  ex: number;
+  ey: number;
+  ez: number;
 }
 
-/** Ray vs sphere; returns entry t or null. */
-function raySphere(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, c: THREE.Vector3, r: number): number | null {
-  const mx = ox - c.x;
-  const my = oy - c.y;
-  const mz = oz - c.z;
-  const b = mx * dx + my * dy + mz * dz;
-  const cc = mx * mx + my * my + mz * mz - r * r;
-  if (cc > 0 && b > 0) return null;
-  const disc = b * b - cc;
+const UP = new THREE.Vector3(0, 1, 0);
+const RIGHT = new THREE.Vector3(1, 0, 0);
+const tmpC = new THREE.Vector3();
+const tmpD = new THREE.Vector3();
+const tmpU = new THREE.Vector3();
+const tmpV = new THREE.Vector3();
+
+export function raySphere(
+  ox: number, oy: number, oz: number, dx: number, dy: number, dz: number,
+  cx: number, cy: number, cz: number, r: number,
+): number | null {
+  const ex = cx - ox;
+  const ey = cy - oy;
+  const ez = cz - oz;
+  const b = ex * dx + ey * dy + ez * dz;
+  const c = ex * ex + ey * ey + ez * ez - r * r;
+  if (c > 0 && b < 0) return null;
+  const disc = b * b - c;
   if (disc < 0) return null;
-  const t = -b - Math.sqrt(disc);
+  const sq = Math.sqrt(disc);
+  const t = b - sq;
   if (t >= 0) return t;
-  const t2 = -b + Math.sqrt(disc);
+  const t2 = b + sq;
   return t2 >= 0 ? t2 : null;
 }
 
-export class WeaponSystem {
-  private readonly tracers: Tracer[] = [];
-  private tracerCursor = 0;
-  private readonly flash: THREE.Sprite;
-  private readonly flashLight: THREE.PointLight;
-  private flashT = 0;
-  private readonly tmpA = new THREE.Vector3();
-  private readonly tmpB = new THREE.Vector3();
-
-  constructor(scene: THREE.Scene) {
-    const tracerGeo = new THREE.BoxGeometry(0.035, 0.035, 1);
-    tracerGeo.translate(0, 0, 0.5);
-    for (let i = 0; i < TRACER_COUNT; i++) {
-      const mat = new THREE.MeshBasicMaterial({
-        color: 0xffd27a, transparent: true, opacity: 0,
-        blending: THREE.AdditiveBlending, depthWrite: false,
-      });
-      const mesh = new THREE.Mesh(tracerGeo, mat);
-      mesh.visible = false;
-      mesh.frustumCulled = false;
-      scene.add(mesh);
-      this.tracers.push({ mesh, mat, ttl: 0 });
-    }
-
-    const flashMat = new THREE.SpriteMaterial({
-      map: flashTexture(), transparent: true, opacity: 0,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    });
-    this.flash = new THREE.Sprite(flashMat);
-    this.flash.scale.setScalar(0.8);
-    scene.add(this.flash);
-
-    this.flashLight = new THREE.PointLight(0xffb45e, 0, 14, 2);
-    scene.add(this.flashLight);
+export function rayCylY(
+  ox: number, oy: number, oz: number, dx: number, dy: number, dz: number,
+  cx: number, cz: number, r: number, y0: number, y1: number,
+): number | null {
+  const ex = ox - cx;
+  const ez = oz - cz;
+  const a = dx * dx + dz * dz;
+  if (a < 1e-9) return null;
+  const b = 2 * (ex * dx + ez * dz);
+  const c = ex * ex + ez * ez - r * r;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return null;
+  const sq = Math.sqrt(disc);
+  const t1 = (-b - sq) / (2 * a);
+  if (t1 >= 0) {
+    const y = oy + dy * t1;
+    if (y >= y0 && y <= y1) return t1;
   }
+  const t2 = (-b + sq) / (2 * a);
+  if (t2 >= 0) {
+    const y = oy + dy * t2;
+    if (y >= y0 && y <= y1) return t2;
+  }
+  return null;
+}
 
-  /**
-   * Fire one shot from the muzzle along camera-forward with aim assist.
-   * Applies damage; returns hit info for scoring/SFX.
-   */
-  fire(
-    camera: THREE.PerspectiveCamera,
-    muzzle: THREE.Object3D,
-    zombies: readonly Zombie[],
-    particles: ParticleSystem,
-    damage: number,
-  ): ShotResult {
-    const origin = this.tmpA.set(0, 0, 0);
-    muzzle.getWorldPosition(origin);
-    const camDir = this.tmpB.set(0, 0, 0);
-    camera.getWorldDirection(camDir);
+interface SlabResult { t0: number; t1: number; n0: number; }
 
-    // aim assist: nearest zombie within the cone
-    let target: Zombie | null = null;
-    let bestAngle: number = WEAPON.aimAssistRad;
-    const head = new THREE.Vector3();
-    const chest = new THREE.Vector3();
-    for (const z of zombies) {
-      if (z.dead || z.state === 'dying') continue;
-      z.chestAt(chest);
-      const toZ = chest.clone().sub(origin);
-      const dist = toZ.length();
-      if (dist > WEAPON.range) continue;
-      const ang = toZ.normalize().angleTo(camDir);
-      if (ang < bestAngle) {
-        bestAngle = ang;
-        target = z;
-      }
-    }
+function slab(o: number, d: number, mn: number, mx: number, maxT: number): SlabResult | null {
+  if (Math.abs(d) < 1e-9) {
+    if (o < mn || o > mx) return null;
+    return { t0: 0, t1: maxT, n0: 0 };
+  }
+  const inv = 1 / d;
+  let ta = (mn - o) * inv;
+  let tb = (mx - o) * inv;
+  let na = -1;
+  if (ta > tb) {
+    const s = ta; ta = tb; tb = s;
+    na = 1;
+  }
+  return { t0: ta, t1: tb, n0: na };
+}
 
-    let aimPoint: THREE.Vector3;
-    if (target) {
-      aimPoint = target.chestAt(new THREE.Vector3());
-      // slight head bias when shooting close & centered
-      if (bestAngle < 0.08) {
-        target.headAt(head);
-        aimPoint.lerp(head, 0.35);
-      }
+/** 3D-луч против окружения (боксы, цилиндры, земля) */
+export function rayEnv(
+  ox: number, oy: number, oz: number, dx: number, dy: number, dz: number,
+  col: Collider, maxT: number,
+): EnvHitInfo | null {
+  let best: EnvHitInfo | null = null;
+  for (const b of col.boxes) {
+    const sx = slab(ox, dx, b.x - b.hw, b.x + b.hw, maxT);
+    if (!sx) continue;
+    const sy = slab(oy, dy, 0, b.h, maxT);
+    if (!sy) continue;
+    const sz = slab(oz, dz, b.z - b.hd, b.z + b.hd, maxT);
+    if (!sz) continue;
+    let t0 = sx.t0;
+    let axis = 0;
+    let sign = sx.n0;
+    if (sy.t0 > t0) { t0 = sy.t0; axis = 1; sign = sy.n0; }
+    if (sz.t0 > t0) { t0 = sz.t0; axis = 2; sign = sz.n0; }
+    const t1 = Math.min(sx.t1, sy.t1, sz.t1);
+    if (t0 > t1 || t0 < 0 || t0 > maxT) continue;
+    if (best && best.t <= t0) continue;
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    if (sign !== 0) {
+      if (axis === 0) nx = sign;
+      else if (axis === 1) ny = sign;
+      else nz = sign;
     } else {
-      aimPoint = origin.clone().addScaledVector(camDir, WEAPON.range);
-      // clamp to floor plane so tracers don't fly into the sky forever
-      if (aimPoint.y < 0.05 && camDir.y < -0.001) {
-        const t = (0.05 - origin.y) / camDir.y;
-        aimPoint.copy(origin).addScaledVector(camDir, Math.max(1, t));
-      }
+      nx = -dx; ny = -dy; nz = -dz;
     }
-
-    const dir = aimPoint.sub(origin).normalize();
-    // spread
-    dir.x += (Math.random() - 0.5) * WEAPON.spreadRad * 2;
-    dir.y += (Math.random() - 0.5) * WEAPON.spreadRad * 2;
-    dir.z += (Math.random() - 0.5) * WEAPON.spreadRad * 2;
-    dir.normalize();
-
-    // find nearest hit: zombies (head then chest) vs environment planes
-    let bestT: number = WEAPON.range;
-    let hitZombie: Zombie | null = null;
-    let headshot = false;
-    const c = new THREE.Vector3();
-    for (const z of zombies) {
-      if (z.dead || z.state === 'dying') continue;
-      z.headAt(c);
-      const th = raySphere(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, c, 0.24 * z.rig.scale);
-      z.chestAt(c);
-      const tc = raySphere(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, c, 0.46 * z.rig.scale);
-      const t = Math.min(th ?? Infinity, tc ?? Infinity);
-      if (Number.isFinite(t) && t < bestT) {
-        bestT = t;
-        hitZombie = z;
-        headshot = (th ?? Infinity) <= (tc ?? Infinity);
-      }
-    }
-    // floor / walls
-    if (dir.y < -0.0001) {
-      const t = -origin.y / dir.y;
-      if (t > 0 && t < bestT) {
-        bestT = t;
-        hitZombie = null;
-      }
-    }
-    const wallLim = ARENA.half + 2.4;
-    for (const axis of ['x', 'z'] as const) {
-      const d = axis === 'x' ? dir.x : dir.z;
-      const o = axis === 'x' ? origin.x : origin.z;
-      if (Math.abs(d) > 0.0001) {
-        for (const s of [-1, 1]) {
-          const t = (s * wallLim - o) / d;
-          if (t > 0 && t < bestT) {
-            bestT = t;
-            hitZombie = null;
-          }
+    best = { t: t0, x: ox + dx * t0, y: oy + dy * t0, z: oz + dz * t0, nx, ny, nz };
+  }
+  for (const c of col.cyls) {
+    const ex = ox - c.x;
+    const ez = oz - c.z;
+    const a = dx * dx + dz * dz;
+    if (a > 1e-9) {
+      const bq = 2 * (ex * dx + ez * dz);
+      const cq = ex * ex + ez * ez - c.r * c.r;
+      const disc = bq * bq - 4 * a * cq;
+      if (disc >= 0) {
+        const sq = Math.sqrt(disc);
+        for (const t of [(-bq - sq) / (2 * a), (-bq + sq) / (2 * a)]) {
+          if (t < 0 || t > maxT) continue;
+          const y = oy + dy * t;
+          if (y < 0 || y > c.h) continue;
+          if (best && best.t <= t) continue;
+          const hx = ox + dx * t;
+          const hz = oz + dz * t;
+          const rl = Math.hypot(hx - c.x, hz - c.z) || 1;
+          best = { t, x: hx, y, z: hz, nx: (hx - c.x) / rl, ny: 0, nz: (hz - c.z) / rl };
+          break;
         }
       }
     }
-
-    const point = origin.clone().addScaledVector(dir, bestT);
-    let killed = false;
-    if (hitZombie) {
-      const knock = dir.clone().setY(0).normalize();
-      const res = hitZombie.takeDamage(headshot ? damage * WEAPON.headshotMult : damage, headshot, knock);
-      killed = res === 'killed';
-      particles.burst({
-        count: killed ? 22 : headshot ? 14 : 8,
-        origin: point,
-        dir: knock,
-        speed: killed ? 4.2 : 3,
-        spread: 0.9,
-        life: killed ? 0.7 : 0.45,
-        colors: [0x8a0f14, 0xb01820, 0x5e0a0e],
-      });
-    } else {
-      particles.burst({
-        count: 5, origin: point, dir: dir.clone().negate(), speed: 2.2,
-        spread: 0.8, life: 0.35, gravity: 6, colors: [0x9aa0a8, 0x6a7078],
-      });
+    // верхняя крышка
+    if (Math.abs(dy) > 1e-9) {
+      const t = (c.h - oy) / dy;
+      if (t >= 0 && t <= maxT && (!best || t < best.t)) {
+        const hx = ox + dx * t;
+        const hz = oz + dz * t;
+        const dd = (hx - c.x) ** 2 + (hz - c.z) ** 2;
+        if (dd <= c.r * c.r) best = { t, x: hx, y: c.h, z: hz, nx: 0, ny: 1, nz: 0 };
+      }
     }
+  }
+  // земля
+  if (dy < -1e-9) {
+    const t = -oy / dy;
+    if (t >= 0 && t <= maxT && (!best || t < best.t)) {
+      best = { t, x: ox + dx * t, y: 0, z: oz + dz * t, nx: 0, ny: 1, nz: 0 };
+    }
+  }
+  return best;
+}
 
-    this.spawnTracer(origin, point);
-    // muzzle flash
-    this.flashT = TRACER_TTL;
-    this.flash.position.copy(origin);
-    this.flashLight.position.copy(origin);
-    this.flash.material.opacity = 1;
-    this.flash.scale.setScalar(0.7 + Math.random() * 0.5);
-    this.flashLight.intensity = 9;
+/** попадание луча в капсулу игрока; px/py/pz — ступни */
+export function playerHit(
+  ox: number, oy: number, oz: number, dx: number, dy: number, dz: number,
+  px: number, py: number, pz: number, crouched: boolean,
+): number | null {
+  const y0 = py + 0.15;
+  const y1 = py + (crouched ? PLAYER.crouchEye + 0.22 : PLAYER.eye + 0.1);
+  return rayCylY(ox, oy, oz, dx, dy, dz, px, pz, PLAYER.radius * 0.92, y0, y1);
+}
 
-    return { zombie: hitZombie, headshot, point, killed };
+/** сэмплировать направление внутри конуса разброса */
+export function sampleCone(
+  dx: number, dy: number, dz: number, spread: number, rng: () => number, out: THREE.Vector3,
+): THREE.Vector3 {
+  out.set(dx, dy, dz);
+  if (spread <= 1e-6) return out;
+  const phi = Math.sqrt(rng()) * spread;
+  const theta = rng() * Math.PI * 2;
+  const ref = Math.abs(out.y) < 0.95 ? UP : RIGHT;
+  tmpU.crossVectors(out, ref).normalize();
+  tmpV.crossVectors(out, tmpU);
+  out.multiplyScalar(Math.cos(phi))
+    .addScaledVector(tmpU, Math.sin(phi) * Math.cos(theta))
+    .addScaledVector(tmpV, Math.sin(phi) * Math.sin(theta))
+    .normalize();
+  return out;
+}
+
+/** разрешить одну пулю: враги против окружения, ближайшее побеждает */
+export function resolvePellet(
+  ox: number, oy: number, oz: number, dx: number, dy: number, dz: number,
+  spread: number, rng: () => number, enemies: readonly Enemy[], col: Collider, maxT: number,
+): PelletResult {
+  const dir = sampleCone(dx, dy, dz, spread, rng, tmpD);
+  const env = rayEnv(ox, oy, oz, dir.x, dir.y, dir.z, col, maxT);
+  let bestE: EnemyHitInfo | null = null;
+  const cap = { y0: 0, y1: 0, r: 0 };
+  for (const e of enemies) {
+    if (!e.solid) continue;
+    e.headCenter(tmpC);
+    const th = raySphere(ox, oy, oz, dir.x, dir.y, dir.z, tmpC.x, tmpC.y, tmpC.z, e.headRadius);
+    e.bodyCapsule(cap);
+    const tb = rayCylY(ox, oy, oz, dir.x, dir.y, dir.z, e.pos.x, e.pos.z, cap.r, cap.y0, cap.y1);
+    let tc: number | null = null;
+    let head = false;
+    if (th !== null && tb !== null) {
+      head = th <= tb;
+      tc = head ? th : tb;
+    } else if (th !== null) {
+      head = true;
+      tc = th;
+    } else if (tb !== null) {
+      tc = tb;
+    }
+    if (tc !== null && (!bestE || tc < bestE.t)) bestE = { enemy: e, head, t: tc };
+  }
+  if (bestE && (!env || bestE.t < env.t)) {
+    return {
+      enemy: bestE, env: null,
+      ex: ox + dir.x * bestE.t, ey: oy + dir.y * bestE.t, ez: oz + dir.z * bestE.t,
+    };
+  }
+  if (env) {
+    return { enemy: null, env, ex: env.x, ey: env.y, ez: env.z };
+  }
+  return {
+    enemy: null, env: null,
+    ex: ox + dir.x * maxT, ey: oy + dir.y * maxT, ez: oz + dir.z * maxT,
+  };
+}
+
+/* ---------- трассеры ---------- */
+
+const TRACER_MAX = 30;
+
+export class Tracers {
+  readonly mesh: THREE.LineSegments;
+  private pos: Float32Array;
+  private ttl: Float32Array;
+  private cursor = 0;
+  private geometry: THREE.BufferGeometry;
+  private material: THREE.LineBasicMaterial;
+
+  constructor() {
+    this.pos = new Float32Array(TRACER_MAX * 6);
+    this.ttl = new Float32Array(TRACER_MAX);
+    for (let i = 0; i < TRACER_MAX; i++) {
+      this.pos[i * 6 + 1] = -90;
+      this.pos[i * 6 + 4] = -90;
+    }
+    this.geometry = new THREE.BufferGeometry();
+    this.geometry.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
+    this.material = new THREE.LineBasicMaterial({
+      color: 0xffd9a0, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    this.mesh = new THREE.LineSegments(this.geometry, this.material);
+    this.mesh.frustumCulled = false;
   }
 
-  private spawnTracer(from: THREE.Vector3, to: THREE.Vector3): void {
-    const t = this.tracers[this.tracerCursor];
-    this.tracerCursor = (this.tracerCursor + 1) % TRACER_COUNT;
-    if (!t) return;
-    const len = from.distanceTo(to);
-    t.mesh.position.copy(from);
-    t.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), to.clone().sub(from).normalize());
-    t.mesh.scale.set(1, 1, Math.max(0.2, len));
-    t.mesh.visible = true;
-    t.mat.opacity = 0.95;
-    t.ttl = TRACER_TTL;
+  spawn(x1: number, y1: number, z1: number, x2: number, y2: number, z2: number): void {
+    const i = this.cursor;
+    this.cursor = (i + 1) % TRACER_MAX;
+    // короткий светящийся штрих у конца траектории
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const dz = z2 - z1;
+    const len = Math.hypot(dx, dy, dz);
+    const tail = Math.min(len, 5.5);
+    const k = len > 1e-4 ? (len - tail) / len : 0;
+    const o = i * 6;
+    this.pos[o] = x1 + dx * k;
+    this.pos[o + 1] = y1 + dy * k;
+    this.pos[o + 2] = z1 + dz * k;
+    this.pos[o + 3] = x2;
+    this.pos[o + 4] = y2;
+    this.pos[o + 5] = z2;
+    this.ttl[i] = 0.055;
   }
 
   update(dt: number): void {
-    for (const t of this.tracers) {
-      if (t.ttl <= 0) continue;
-      t.ttl -= dt;
-      if (t.ttl <= 0) {
-        t.mesh.visible = false;
-        t.mat.opacity = 0;
-      } else {
-        t.mat.opacity = (t.ttl / TRACER_TTL) * 0.95;
+    for (let i = 0; i < TRACER_MAX; i++) {
+      const t = this.ttl[i] ?? 0;
+      if (t <= 0) continue;
+      const nt = t - dt;
+      this.ttl[i] = nt;
+      if (nt <= 0) {
+        this.pos[i * 6 + 1] = -90;
+        this.pos[i * 6 + 4] = -90;
       }
     }
-    if (this.flashT > 0) {
-      this.flashT -= dt;
-      const k = Math.max(0, this.flashT / TRACER_TTL);
-      this.flash.material.opacity = k;
-      this.flashLight.intensity = 9 * k;
+    (this.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+  }
+
+  dispose(): void {
+    this.geometry.dispose();
+    this.material.dispose();
+  }
+}
+
+/* ---------- следы (декали) ---------- */
+
+const DECAL_MAX = 44;
+const SCORCH_MAX = 10;
+
+export class Decals {
+  readonly group: THREE.Group;
+  private pool: THREE.Mesh[] = [];
+  private scorchPool: THREE.Mesh[] = [];
+  private cursor = 0;
+  private scorchCursor = 0;
+  private geo: THREE.CircleGeometry;
+  private mat: THREE.MeshBasicMaterial;
+  private scorchGeo: THREE.CircleGeometry;
+  private scorchMat: THREE.MeshBasicMaterial;
+
+  constructor() {
+    this.group = new THREE.Group();
+    this.geo = new THREE.CircleGeometry(0.055, 8);
+    this.mat = new THREE.MeshBasicMaterial({
+      color: 0x1c130a, transparent: true, opacity: 0.55,
+      depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2,
+    });
+    for (let i = 0; i < DECAL_MAX; i++) {
+      const m = new THREE.Mesh(this.geo, this.mat);
+      m.visible = false;
+      this.pool.push(m);
+      this.group.add(m);
     }
+    this.scorchGeo = new THREE.CircleGeometry(1.15, 14);
+    this.scorchMat = new THREE.MeshBasicMaterial({
+      color: 0x241a10, transparent: true, opacity: 0.38,
+      depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3,
+    });
+    for (let i = 0; i < SCORCH_MAX; i++) {
+      const m = new THREE.Mesh(this.scorchGeo, this.scorchMat);
+      m.rotation.x = -Math.PI / 2;
+      m.visible = false;
+      this.scorchPool.push(m);
+      this.group.add(m);
+    }
+  }
+
+  add(x: number, y: number, z: number, nx: number, ny: number, nz: number): void {
+    const m = this.pool[this.cursor];
+    this.cursor = (this.cursor + 1) % DECAL_MAX;
+    if (!m) return;
+    m.position.set(x + nx * 0.012, y + ny * 0.012, z + nz * 0.012);
+    m.lookAt(x + nx, y + ny, z + nz);
+    m.visible = true;
+  }
+
+  addScorch(x: number, z: number): void {
+    const m = this.scorchPool[this.scorchCursor];
+    this.scorchCursor = (this.scorchCursor + 1) % SCORCH_MAX;
+    if (!m) return;
+    m.position.set(x, 0.02, z);
+    m.rotation.z = Math.random() * Math.PI;
+    m.visible = true;
+  }
+
+  clear(): void {
+    for (const m of this.pool) m.visible = false;
+    for (const m of this.scorchPool) m.visible = false;
+  }
+
+  dispose(): void {
+    this.geo.dispose();
+    this.mat.dispose();
+    this.scorchGeo.dispose();
+    this.scorchMat.dispose();
   }
 }

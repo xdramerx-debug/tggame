@@ -1,4 +1,4 @@
-name: Deploy Dead Zone
+name: Deploy Khamsin
 
 on:
   push:

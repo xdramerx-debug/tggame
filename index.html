@@ -6,35 +6,35 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#0a0e14" />
+    <meta name="theme-color" content="#171108" />
     <meta name="color-scheme" content="dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta
       name="description"
-      content="Мёртвая зона — мобильный 3D-шутер от третьего лица: отбивайся от волн зомби в заброшенном комплексе."
+      content="Хамсин — мобильный FPS-выживание в песках: оборона рубежа, вылазки за лутом, прокачка и закупка оружия."
     />
-    <title>Мёртвая зона — 3D шутер</title>
+    <title>Хамсин — FPS-выживание в песках</title>
     <style>
       /* Instant splash: shows before JS boots, replaced on mount */
-      html, body { margin: 0; background: #0a0e14; }
+      html, body { margin: 0; background: #171108; }
       #splash {
         position: fixed; inset: 0; display: flex; flex-direction: column;
         align-items: center; justify-content: center; gap: 14px;
-        background: radial-gradient(circle at 50% 35%, #1a2030 0%, #0a0e14 70%);
-        color: #cdd6e4; font-family: system-ui, -apple-system, sans-serif;
+        background: radial-gradient(circle at 50% 30%, #3a2c14 0%, #171108 72%);
+        color: #e8d9b8; font-family: system-ui, -apple-system, sans-serif;
       }
       #splash .orb { font-size: 64px; animation: splashFloat 2.4s ease-in-out infinite; }
-      #splash .name { font-weight: 900; letter-spacing: 0.14em; color: #e11d48; text-transform: uppercase; }
+      #splash .name { font-weight: 900; letter-spacing: 0.22em; color: #e8b34b; text-transform: uppercase; }
       #splash .dots::after { content: '…'; animation: splashDots 1.2s steps(4) infinite; }
       @keyframes splashFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
       @keyframes splashDots { from { opacity: 0.2; } to { opacity: 1; } }
     </style>
   </head>
   <body>
-    <div id="root"><div id="splash"><div class="orb">🧟</div><div class="name">Мёртвая зона</div><div class="dots">Прорыв периметра</div></div></div>
-    <noscript>Для запуска «Мёртвой зоны» необходим JavaScript.</noscript>
+    <div id="root"><div id="splash"><div class="orb">🏜️</div><div class="name">Хамсин</div><div class="dots">Рубеж-9 ждёт</div></div></div>
+    <noscript>Для запуска «Хамсина» необходим JavaScript.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

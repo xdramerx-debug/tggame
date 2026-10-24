@@ -1,350 +1,564 @@
 import * as THREE from 'three';
+import type { EnemyKind, WeaponId } from '../game/types';
 
 /**
- * Procedural humanoid rigs — no external models, all animation in code.
- * Character faces local +Z. Pivots: shoulders/elbows/hips/knees are Groups so
- * limbs swing from joints. Materials are cloned per rig for per-unit hit flash.
+ * Риги «Хамсина»: солдаты (4 класса), титан, плевун и вьюмодель оружия
+ * от первого лица. Всё из боксов/сфер/цилиндров, геометрия шарится
+ * (кэш), материалы — на каждый риг свои (вспышка урона по emissive).
  */
 
-export interface HumanoidRig {
+type Disposable = THREE.BufferGeometry | THREE.Material | THREE.Texture;
+
+interface GeoCache {
+  box: THREE.BoxGeometry;
+  sphere: THREE.SphereGeometry;
+  cyl: THREE.CylinderGeometry;
+}
+
+let cache: GeoCache | null = null;
+
+function geo(): GeoCache {
+  cache ??= {
+    box: new THREE.BoxGeometry(1, 1, 1),
+    sphere: new THREE.SphereGeometry(0.5, 12, 9),
+    cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 10),
+  };
+  return cache;
+}
+
+export function disposeRigCache(): void {
+  cache?.box.dispose();
+  cache?.sphere.dispose();
+  cache?.cyl.dispose();
+  cache = null;
+}
+
+export interface RigParts {
   root: THREE.Group;
-  body: THREE.Group;
+  torso: THREE.Group;
   head: THREE.Group;
-  headMesh: THREE.Mesh;
   armL: THREE.Group;
-  foreL: THREE.Group;
   armR: THREE.Group;
-  foreR: THREE.Group;
   legL: THREE.Group;
-  shinL: THREE.Group;
   legR: THREE.Group;
-  shinR: THREE.Group;
-  gun: THREE.Group | null;
+}
+
+export interface EnemyRig {
+  kind: EnemyKind;
+  parts: RigParts;
+  /** дуло оружия (мишень для трассеров), null у мутантов без ствола */
   muzzle: THREE.Object3D | null;
-  blobShadow: THREE.Mesh;
-  flashMaterials: THREE.MeshLambertMaterial[];
-  /** per-rig GPU resources to free on removal (shared boxes/textures excluded) */
-  disposables: { dispose(): void }[];
-  /** base hip height used by animations */
-  hipY: number;
-  scale: number;
+  /** красный луч снайпера */
+  laser: THREE.Mesh | null;
+  /** светящийся мешок плевуна */
+  sac: THREE.Mesh | null;
+  /** материалы тела для вспышки урона */
+  bodyMats: THREE.MeshLambertMaterial[];
+  disposables: Disposable[];
+  /** рост в локальных единицах (до scale) */
+  height: number;
+  headY: number;
+  headR: number;
 }
 
-export interface RigOpts {
-  skin: number;
-  clothes: number;
-  eye: number;
-  scale: number;
-  zombie: boolean;
-  shadowTexture: THREE.Texture;
-  withGun?: boolean;
+function lam(color: number, emissive = 0x000000, opacity = 1): THREE.MeshLambertMaterial {
+  const m = new THREE.MeshLambertMaterial({ color, emissive });
+  if (opacity < 1) {
+    m.transparent = true;
+    m.opacity = opacity;
+  }
+  return m;
 }
 
-interface RigGeometry {
-  pelvis: THREE.BoxGeometry;
-  torso: THREE.BoxGeometry;
-  head: THREE.BoxGeometry;
-  limb: THREE.BoxGeometry;
-  fore: THREE.BoxGeometry;
-  thigh: THREE.BoxGeometry;
-  shin: THREE.BoxGeometry;
-  gunBody: THREE.BoxGeometry;
-  gunBarrel: THREE.BoxGeometry;
+function box(
+  parent: THREE.Group, w: number, h: number, d: number,
+  x: number, y: number, z: number, mat: THREE.Material,
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(geo().box, mat);
+  mesh.scale.set(w, h, d);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return mesh;
 }
 
-let sharedGeo: RigGeometry | null = null;
+function sphere(
+  parent: THREE.Group, r: number, x: number, y: number, z: number, mat: THREE.Material,
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(geo().sphere, mat);
+  mesh.scale.setScalar(r * 2);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
 
-/** Free per-rig GPU resources (shared boxes & textures are kept). */
-export function disposeRig(rig: HumanoidRig): void {
+function cyl(
+  parent: THREE.Group, r: number, h: number, x: number, y: number, z: number, mat: THREE.Material,
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(geo().cyl, mat);
+  mesh.scale.set(r * 2, h, r * 2);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+interface SoldierColors { skin: number; cloth: number; gear: number; eye: number; }
+
+function buildSoldier(kind: EnemyKind, c: SoldierColors): EnemyRig {
+  const disposables: Disposable[] = [];
+  const mk = (color: number, emissive = 0x000000, opacity = 1): THREE.MeshLambertMaterial => {
+    const m = lam(color, emissive, opacity);
+    disposables.push(m);
+    return m;
+  };
+  const skin = mk(c.skin);
+  const cloth = mk(c.cloth);
+  const gear = mk(c.gear);
+  const eye = mk(c.eye, c.eye, 1);
+  const metal = mk(0x2e2b26);
+
+  const root = new THREE.Group();
+  const torso = new THREE.Group();
+  torso.position.set(0, 0.92, 0);
+  root.add(torso);
+  box(torso, 0.42, 0.58, 0.24, 0, 0.29, 0, cloth);
+  box(torso, 0.44, 0.14, 0.26, 0, 0.1, 0, gear); // ремень/разгрузка
+  box(torso, 0.3, 0.22, 0.1, 0, 0.42, 0.13, gear); // бронежилет спереди
+
+  const head = new THREE.Group();
+  head.position.set(0, 0.64, 0);
+  torso.add(head);
+  sphere(head, 0.125, 0, 0.1, 0, skin);
+  box(head, 0.27, 0.09, 0.29, 0, 0.17, 0, gear); // каска
+  box(head, 0.18, 0.05, 0.03, 0, 0.1, 0.12, eye); // визор/глаза
+
+  const mkArm = (side: number): THREE.Group => {
+    const g = new THREE.Group();
+    g.position.set(0.27 * side, 0.5, 0);
+    torso.add(g);
+    box(g, 0.11, 0.5, 0.12, 0, -0.25, 0, cloth);
+    box(g, 0.1, 0.14, 0.1, 0, -0.54, 0, skin);
+    return g;
+  };
+  const armL = mkArm(-1);
+  const armR = mkArm(1);
+
+  const mkLeg = (side: number): THREE.Group => {
+    const g = new THREE.Group();
+    g.position.set(0.11 * side, 0.9, 0);
+    root.add(g);
+    box(g, 0.15, 0.8, 0.16, 0, -0.4, 0, cloth);
+    box(g, 0.16, 0.1, 0.26, 0, -0.84, 0.04, gear); // ботинок
+    return g;
+  };
+  const legL = mkLeg(-1);
+  const legR = mkLeg(1);
+
+  // оружие у солдатских классов, морда смотрит на +Z
+  let muzzle: THREE.Object3D | null = null;
+  let laser: THREE.Mesh | null = null;
+  if (kind !== 'grunt') {
+    const gun = new THREE.Group();
+    gun.position.set(0.14, 0.4, 0.16);
+    torso.add(gun);
+    if (kind === 'rifleman') {
+      box(gun, 0.06, 0.1, 0.5, 0, 0, 0.15, metal);
+      box(gun, 0.05, 0.16, 0.08, 0, -0.1, 0.08, gear); // магазин
+      muzzle = new THREE.Object3D();
+      muzzle.position.set(0, 0.01, 0.45);
+      gun.add(muzzle);
+    } else if (kind === 'shotgunner') {
+      box(gun, 0.08, 0.09, 0.44, 0, 0, 0.12, metal);
+      cyl(gun, 0.03, 0.4, 0, 0.03, 0.2, metal).rotation.x = Math.PI / 2;
+      muzzle = new THREE.Object3D();
+      muzzle.position.set(0, 0.03, 0.42);
+      gun.add(muzzle);
+    } else if (kind === 'sniper') {
+      box(gun, 0.055, 0.09, 0.72, 0, 0, 0.25, metal);
+      cyl(gun, 0.03, 0.22, 0, 0.09, 0.18, gear).rotation.x = Math.PI / 2; // прицел
+      muzzle = new THREE.Object3D();
+      muzzle.position.set(0, 0, 0.66);
+      gun.add(muzzle);
+      const lmat = lam(0xff2a1a, 0xff2a1a, 0.4);
+      disposables.push(lmat);
+      laser = new THREE.Mesh(geo().cyl, lmat);
+      laser.scale.set(0.016, 20, 0.016);
+      laser.position.set(0, 0, 20.7);
+      laser.rotation.x = Math.PI / 2;
+      laser.visible = false;
+      gun.add(laser);
+    }
+    // руки к оружию
+    armR.rotation.x = -1.35;
+    armL.rotation.x = -1.2;
+    armL.rotation.z = 0.35;
+  } else {
+    box(torso, 0.05, 0.1, 0.2, 0.16, 0.38, 0.2, metal); // пистолет
+    muzzle = new THREE.Object3D();
+    muzzle.position.set(0.16, 0.4, 0.32);
+    torso.add(muzzle);
+    armR.rotation.x = -1.3;
+  }
+
+  return {
+    kind,
+    parts: { root, torso, head, armL, armR, legL, legR },
+    muzzle,
+    laser,
+    sac: null,
+    bodyMats: [skin, cloth, gear],
+    disposables,
+    height: 1.78,
+    headY: 1.66,
+    headR: 0.17,
+  };
+}
+
+function buildTitan(): EnemyRig {
+  const disposables: Disposable[] = [];
+  const mk = (color: number, emissive = 0x000000): THREE.MeshLambertMaterial => {
+    const m = lam(color, emissive);
+    disposables.push(m);
+    return m;
+  };
+  const hide = mk(0x7a4a30);
+  const plate = mk(0x4c3a28);
+  const eye = mk(0xff7a1a, 0xff5a00);
+
+  const root = new THREE.Group();
+  const torso = new THREE.Group();
+  torso.position.set(0, 0.78, 0);
+  torso.rotation.x = 0.28; // сутулость
+  root.add(torso);
+  box(torso, 1.0, 0.82, 0.58, 0, 0.4, 0, hide);
+  box(torso, 1.06, 0.3, 0.62, 0, 0.66, -0.02, plate); // надплечья
+  box(torso, 0.5, 0.3, 0.2, 0, 0.3, 0.3, plate); // грудь-броня
+
+  const head = new THREE.Group();
+  head.position.set(0, 0.86, 0.14);
+  torso.add(head);
+  box(head, 0.38, 0.32, 0.36, 0, 0.1, 0, hide);
+  box(head, 0.3, 0.1, 0.08, 0, 0.12, 0.2, eye);
+  box(head, 0.34, 0.08, 0.12, 0, -0.06, 0.2, plate); // челюсть
+
+  const mkArm = (side: number): THREE.Group => {
+    const g = new THREE.Group();
+    g.position.set(0.62 * side, 0.62, 0);
+    torso.add(g);
+    box(g, 0.22, 0.78, 0.24, 0, -0.38, 0, hide);
+    box(g, 0.3, 0.3, 0.32, 0, -0.88, 0.02, plate); // кулак
+    return g;
+  };
+  const armL = mkArm(-1);
+  const armR = mkArm(1);
+
+  const mkLeg = (side: number): THREE.Group => {
+    const g = new THREE.Group();
+    g.position.set(0.26 * side, 0.78, 0);
+    root.add(g);
+    box(g, 0.28, 0.62, 0.3, 0, -0.32, 0, hide);
+    box(g, 0.3, 0.16, 0.44, 0, -0.7, 0.06, plate);
+    return g;
+  };
+  const legL = mkLeg(-1);
+  const legR = mkLeg(1);
+
+  return {
+    kind: 'titan',
+    parts: { root, torso, head, armL, armR, legL, legR },
+    muzzle: null,
+    laser: null,
+    sac: null,
+    bodyMats: [hide, plate],
+    disposables,
+    height: 2.3,
+    headY: 1.78,
+    headR: 0.3,
+  };
+}
+
+function buildSpitter(): EnemyRig {
+  const disposables: Disposable[] = [];
+  const mk = (color: number, emissive = 0x000000, opacity = 1): THREE.MeshLambertMaterial => {
+    const m = lam(color, emissive, opacity);
+    disposables.push(m);
+    return m;
+  };
+  const hide = mk(0x5f7a34);
+  const belly = mk(0x87a04a);
+  const eye = mk(0xf5e663, 0xd9c22e);
+  const sacMat = mk(0x9fd93a, 0x6fa020, 0.92);
+
+  const root = new THREE.Group();
+  const torso = new THREE.Group();
+  torso.position.set(0, 0.66, 0);
+  torso.rotation.x = 0.42; // сильно сутулый
+  root.add(torso);
+  box(torso, 0.6, 0.52, 0.44, 0, 0.26, 0, hide);
+  sphere(torso, 0.28, 0, 0.22, -0.24, belly); // пузо
+  const sac = sphere(torso, 0.24, 0, 0.42, -0.3, sacMat); // кислотный мешок
+
+  const head = new THREE.Group();
+  head.position.set(0, 0.5, 0.16);
+  torso.add(head);
+  sphere(head, 0.2, 0, 0.12, 0, hide);
+  box(head, 0.26, 0.08, 0.16, 0, 0.02, 0.18, belly); // пасть
+  box(head, 0.22, 0.05, 0.04, 0, 0.18, 0.17, eye);
+
+  const mkArm = (side: number): THREE.Group => {
+    const g = new THREE.Group();
+    g.position.set(0.36 * side, 0.4, 0);
+    torso.add(g);
+    box(g, 0.1, 0.62, 0.1, 0, -0.3, 0, hide);
+    box(g, 0.12, 0.1, 0.16, 0, -0.64, 0.02, belly);
+    return g;
+  };
+  const armL = mkArm(-1);
+  const armR = mkArm(1);
+
+  const mkLeg = (side: number): THREE.Group => {
+    const g = new THREE.Group();
+    g.position.set(0.16 * side, 0.66, 0);
+    root.add(g);
+    box(g, 0.14, 0.52, 0.16, 0, -0.26, 0, hide);
+    box(g, 0.16, 0.08, 0.26, 0, -0.56, 0.04, belly);
+    return g;
+  };
+  const legL = mkLeg(-1);
+  const legR = mkLeg(1);
+
+  return {
+    kind: 'spitter',
+    parts: { root, torso, head, armL, armR, legL, legR },
+    muzzle: head, // плюёт «ртом»
+    laser: null,
+    sac,
+    bodyMats: [hide, belly],
+    disposables,
+    height: 1.45,
+    headY: 1.22,
+    headR: 0.24,
+  };
+}
+
+export function buildEnemyRig(kind: EnemyKind, colors: { skin: number; cloth: number; gear: number; eye: number }): EnemyRig {
+  switch (kind) {
+    case 'titan': return buildTitan();
+    case 'spitter': return buildSpitter();
+    default: return buildSoldier(kind, colors);
+  }
+}
+
+export function disposeRig(rig: EnemyRig): void {
+  rig.parts.root.removeFromParent();
   for (const d of rig.disposables) d.dispose();
   rig.disposables.length = 0;
 }
 
-function geo(): RigGeometry {
-  sharedGeo ??= {
-    pelvis: new THREE.BoxGeometry(0.42, 0.22, 0.26),
-    torso: new THREE.BoxGeometry(0.52, 0.62, 0.3),
-    head: new THREE.BoxGeometry(0.32, 0.34, 0.32),
-    limb: new THREE.BoxGeometry(0.14, 0.4, 0.14),
-    fore: new THREE.BoxGeometry(0.12, 0.36, 0.12),
-    thigh: new THREE.BoxGeometry(0.17, 0.46, 0.17),
-    shin: new THREE.BoxGeometry(0.14, 0.44, 0.14),
-    gunBody: new THREE.BoxGeometry(0.09, 0.14, 0.66),
-    gunBarrel: new THREE.BoxGeometry(0.05, 0.05, 0.36),
+/* ---------- анимации (чистые функции от времени) ---------- */
+
+export function animWalk(rig: EnemyRig, t: number, speed01: number): void {
+  const p = rig.parts;
+  const amp = 0.55 + speed01 * 0.35;
+  const f = t * (4.5 + speed01 * 5);
+  p.legL.rotation.x = Math.sin(f) * amp;
+  p.legR.rotation.x = -Math.sin(f) * amp;
+  p.armL.rotation.x = (p.armL.rotation.x > -1 ? -Math.sin(f) * amp * 0.6 : p.armL.rotation.x);
+  if (rig.kind === 'grunt' || rig.kind === 'titan' || rig.kind === 'spitter') {
+    p.armR.rotation.x = -Math.sin(f + Math.PI) * amp * (rig.kind === 'titan' ? 0.5 : 0.6);
+  }
+  if (rig.kind === 'titan') {
+    p.torso.rotation.z = Math.sin(f * 0.5) * 0.08;
+  }
+  p.root.position.y = Math.abs(Math.sin(f)) * 0.045;
+}
+
+export function animIdle(rig: EnemyRig, t: number): void {
+  const p = rig.parts;
+  p.torso.rotation.z = Math.sin(t * 1.4) * 0.02;
+  p.head.rotation.y = Math.sin(t * 0.7) * 0.12;
+}
+
+/** отдача/замах при атаке: k 0..1 */
+export function animFireKick(rig: EnemyRig, k: number): void {
+  const p = rig.parts;
+  if (rig.kind === 'titan') {
+    p.armR.rotation.x = -2.2 + k * 2.6;
+    p.torso.rotation.x = 0.28 + (1 - k) * 0.3;
+  } else if (rig.kind === 'spitter') {
+    p.torso.rotation.x = 0.42 - Math.sin(k * Math.PI) * 0.5;
+    p.head.rotation.x = -Math.sin(k * Math.PI) * 0.6;
+  } else {
+    p.torso.rotation.x = -Math.sin(k * Math.PI) * 0.12;
+    p.armR.rotation.x = -1.35 - Math.sin(k * Math.PI) * 0.18;
+  }
+}
+
+/** вспышка урона: emissive по материалам тела, f 0..1 */
+export function rigFlash(rig: EnemyRig, f: number): void {
+  for (const m of rig.bodyMats) m.emissive.setHex(f > 0 ? 0x7a1208 : 0x000000);
+}
+
+/** падение: p 0..1 */
+export function animDeath(rig: EnemyRig, p: number): void {
+  const e = 1 - Math.pow(1 - p, 2);
+  rig.parts.root.rotation.x = -e * (Math.PI / 2) * 0.92;
+  rig.parts.root.position.y = -e * 0.18;
+  rig.parts.legL.rotation.x = e * 0.5;
+  rig.parts.legR.rotation.x = e * 0.3;
+}
+
+/** подъём из песка при спавне: p 0..1 */
+export function animSpawnRise(rig: EnemyRig, p: number): void {
+  rig.parts.root.position.y = -(1 - p) * 1.4;
+}
+
+/* ---------- вьюмодель от первого лица ---------- */
+
+export interface ViewRig {
+  weapon: WeaponId;
+  root: THREE.Group;
+  gun: THREE.Group;
+  armL: THREE.Group;
+  armR: THREE.Group;
+  muzzle: THREE.Object3D;
+  flash: THREE.Sprite;
+  flashLight: THREE.PointLight;
+  disposables: Disposable[];
+}
+
+let flashTex: THREE.Texture | null = null;
+
+function makeFlashTexture(): THREE.Texture {
+  if (flashTex) return flashTex;
+  const cv = document.createElement('canvas');
+  cv.width = 64;
+  cv.height = 64;
+  const g = cv.getContext('2d');
+  if (g) {
+    const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+    grad.addColorStop(0, 'rgba(255,240,190,1)');
+    grad.addColorStop(0.35, 'rgba(255,170,70,0.75)');
+    grad.addColorStop(1, 'rgba(255,120,40,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+  }
+  const t = new THREE.CanvasTexture(cv);
+  flashTex = t;
+  return t;
+}
+
+export function disposeViewRig(v: ViewRig): void {
+  v.root.removeFromParent();
+  for (const d of v.disposables) d.dispose();
+  v.disposables.length = 0;
+}
+
+/** модель смотрит на −Z (как камера); корень крепится к камере справа-снизу */
+export function buildViewRig(weapon: WeaponId): ViewRig {
+  const disposables: Disposable[] = [];
+  const mk = (color: number, emissive = 0x000000): THREE.MeshLambertMaterial => {
+    const m = lam(color, emissive);
+    disposables.push(m);
+    return m;
   };
-  return sharedGeo;
-}
-
-function limb(parent: THREE.Group, m: THREE.MeshLambertMaterial, g: THREE.BoxGeometry, lengthDown: number, s: number): void {
-  const joint = new THREE.Group();
-  const mesh = new THREE.Mesh(g, m);
-  mesh.position.y = -lengthDown / 2;
-  mesh.scale.setScalar(s);
-  joint.add(mesh);
-  parent.add(joint);
-}
-
-export function buildHumanoid(opts: RigOpts): HumanoidRig {
-  const G = geo();
-  const s = opts.scale;
-
-  const skinMat = new THREE.MeshLambertMaterial({ color: opts.skin });
-  const clothMat = new THREE.MeshLambertMaterial({ color: opts.clothes });
-  const darkMat = new THREE.MeshLambertMaterial({ color: 0x1b1e24 });
-  const flashMaterials = [skinMat, clothMat, darkMat];
+  const metal = mk(0x36322c);
+  const dark = mk(0x232019);
+  const tan = mk(0xb09a6a);
+  const wood = mk(0x7a5a36);
+  const sleeve = mk(0x8a7a58);
+  const glove = mk(0x3a332a);
 
   const root = new THREE.Group();
-  const hipY = 0.95 * s;
+  const gun = new THREE.Group();
+  root.add(gun);
 
-  const body = new THREE.Group();
-  body.position.y = hipY;
-  root.add(body);
-
-  const pelvis = new THREE.Mesh(G.pelvis, clothMat);
-  pelvis.position.y = 0.02 * s;
-  pelvis.scale.setScalar(s);
-  body.add(pelvis);
-
-  const torso = new THREE.Mesh(G.torso, clothMat);
-  torso.position.y = 0.42 * s;
-  torso.scale.setScalar(s);
-  body.add(torso);
-
-  const head = new THREE.Group();
-  head.position.y = 0.78 * s;
-  body.add(head);
-  const headMesh = new THREE.Mesh(G.head, skinMat);
-  headMesh.position.y = 0.16 * s;
-  headMesh.scale.setScalar(s);
-  head.add(headMesh);
-
-  const eyeMat = new THREE.MeshBasicMaterial({ color: opts.eye });
-  const eyeGeo = new THREE.SphereGeometry(0.035 * s, 6, 6);
-  for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(eyeGeo, eyeMat);
-    eye.position.set(side * 0.08 * s, 0.18 * s, 0.16 * s);
-    head.add(eye);
-  }
-  if (opts.zombie) {
-    // torn jaw hint
-    const jaw = new THREE.Mesh(G.fore, darkMat);
-    jaw.scale.set(0.9 * s, 0.35 * s, 0.9 * s);
-    jaw.position.set(0, 0.02 * s, 0.1 * s);
-    head.add(jaw);
-  }
-
-  // arms (pivot at shoulder; fore arms pivot at elbow)
-  const armL = new THREE.Group();
-  armL.position.set(-0.34 * s, 0.62 * s, 0);
-  body.add(armL);
-  limb(armL, skinMat, G.limb, 0.4 * s, s);
-  const foreL = new THREE.Group();
-  foreL.position.y = -0.4 * s;
-  armL.add(foreL);
-  limb(foreL, skinMat, G.fore, 0.36 * s, s);
+  const muzzle = new THREE.Object3D();
+  gun.add(muzzle);
 
   const armR = new THREE.Group();
-  armR.position.set(0.34 * s, 0.62 * s, 0);
-  body.add(armR);
-  limb(armR, skinMat, G.limb, 0.4 * s, s);
-  const foreR = new THREE.Group();
-  foreR.position.y = -0.4 * s;
-  armR.add(foreR);
-  limb(foreR, skinMat, G.fore, 0.36 * s, s);
+  armR.position.set(0.09, -0.16, 0.18);
+  armR.rotation.x = -0.5;
+  root.add(armR);
+  box(armR, 0.065, 0.07, 0.3, 0, -0.01, 0.1, sleeve);
+  box(armR, 0.06, 0.065, 0.09, 0, -0.01, -0.08, glove);
 
-  // legs
-  const legL = new THREE.Group();
-  legL.position.set(-0.14 * s, -0.06 * s, 0);
-  body.add(legL);
-  limb(legL, darkMat, G.thigh, 0.46 * s, s);
-  const shinL = new THREE.Group();
-  shinL.position.y = -0.46 * s;
-  legL.add(shinL);
-  limb(shinL, darkMat, G.shin, 0.44 * s, s);
+  const armL = new THREE.Group();
+  root.add(armL);
 
-  const legR = new THREE.Group();
-  legR.position.set(0.14 * s, -0.06 * s, 0);
-  body.add(legR);
-  limb(legR, darkMat, G.thigh, 0.46 * s, s);
-  const shinR = new THREE.Group();
-  shinR.position.y = -0.46 * s;
-  legR.add(shinR);
-  limb(shinR, darkMat, G.shin, 0.44 * s, s);
-
-  if (opts.zombie) {
-    // base pose: arms stretched forward, head lolling
-    armL.rotation.x = -1.45;
-    armR.rotation.x = -1.45;
-    foreL.rotation.x = -0.25;
-    foreR.rotation.x = -0.25;
-    head.rotation.x = 0.22;
-    body.rotation.x = 0.12;
+  switch (weapon) {
+    case 'pistol':
+      box(gun, 0.05, 0.075, 0.24, 0, 0, -0.06, dark); // затвор
+      box(gun, 0.045, 0.11, 0.06, 0, -0.08, 0.05, tan); // рукоять
+      muzzle.position.set(0, 0.01, -0.2);
+      armL.position.set(-0.07, -0.2, 0.24);
+      armL.rotation.set(-0.75, 0.2, 0.3);
+      box(armL, 0.06, 0.065, 0.26, 0, 0, 0.08, sleeve);
+      break;
+    case 'smg':
+      box(gun, 0.07, 0.1, 0.34, 0, 0, -0.08, dark);
+      cyl(gun, 0.02, 0.14, 0, 0.015, -0.3, metal).rotation.x = Math.PI / 2;
+      box(gun, 0.045, 0.14, 0.07, 0, -0.11, -0.02, metal); // магазин
+      box(gun, 0.05, 0.07, 0.1, 0, -0.02, 0.12, tan); // приклад
+      muzzle.position.set(0, 0.015, -0.38);
+      armL.position.set(-0.08, -0.22, 0.2);
+      armL.rotation.set(-0.8, 0.15, 0.35);
+      box(armL, 0.06, 0.065, 0.28, 0, 0, 0.09, sleeve);
+      break;
+    case 'rifle':
+      box(gun, 0.07, 0.1, 0.44, 0, 0, -0.1, dark);
+      cyl(gun, 0.022, 0.3, 0, 0.02, -0.44, metal).rotation.x = Math.PI / 2;
+      box(gun, 0.06, 0.09, 0.2, 0, 0, -0.34, tan); // цевьё
+      box(gun, 0.05, 0.17, 0.08, 0, -0.13, -0.04, metal); // магазин
+      box(gun, 0.055, 0.08, 0.14, 0, -0.01, 0.17, tan); // приклад
+      muzzle.position.set(0, 0.02, -0.6);
+      armL.position.set(-0.06, -0.24, 0.28);
+      armL.rotation.set(-0.85, 0.1, 0.3);
+      box(armL, 0.06, 0.065, 0.3, 0, 0, 0.1, sleeve);
+      box(armL, 0.055, 0.06, 0.08, 0, 0, -0.09, glove);
+      break;
+    case 'shotgun':
+      cyl(gun, 0.03, 0.4, 0.028, 0.02, -0.26, metal).rotation.x = Math.PI / 2;
+      cyl(gun, 0.03, 0.4, -0.028, 0.02, -0.26, metal).rotation.x = Math.PI / 2;
+      box(gun, 0.08, 0.07, 0.2, 0, -0.02, 0.02, wood);
+      box(gun, 0.07, 0.06, 0.14, 0, -0.05, -0.24, wood); // помпа
+      box(gun, 0.06, 0.09, 0.12, 0, -0.04, 0.16, wood); // приклад
+      muzzle.position.set(0, 0.02, -0.48);
+      armL.position.set(-0.07, -0.26, 0.26);
+      armL.rotation.set(-0.9, 0.12, 0.3);
+      box(armL, 0.06, 0.065, 0.3, 0, 0, 0.1, sleeve);
+      break;
+    case 'sniper':
+      box(gun, 0.065, 0.09, 0.5, 0, 0, -0.12, dark);
+      cyl(gun, 0.02, 0.42, 0, 0.02, -0.52, metal).rotation.x = Math.PI / 2;
+      cyl(gun, 0.032, 0.24, 0, 0.1, -0.14, dark).rotation.x = Math.PI / 2; // оптика
+      box(gun, 0.05, 0.16, 0.07, 0, -0.12, -0.02, metal);
+      box(gun, 0.055, 0.08, 0.16, 0, -0.01, 0.2, wood);
+      muzzle.position.set(0, 0.02, -0.74);
+      armL.position.set(-0.06, -0.24, 0.3);
+      armL.rotation.set(-0.85, 0.1, 0.3);
+      box(armL, 0.06, 0.065, 0.32, 0, 0, 0.1, sleeve);
+      break;
   }
 
-  let gun: THREE.Group | null = null;
-  let muzzle: THREE.Object3D | null = null;
-  if (opts.withGun) {
-    gun = new THREE.Group();
-    const gunBody = new THREE.Mesh(G.gunBody, darkMat);
-    gun.add(gunBody);
-    const barrel = new THREE.Mesh(G.gunBarrel, darkMat);
-    barrel.position.z = 0.44;
-    barrel.position.y = 0.03;
-    gun.add(barrel);
-    muzzle = new THREE.Object3D();
-    muzzle.position.set(0, 0.03, 0.66);
-    gun.add(muzzle);
-    // held in front: attach to body, positioned at hands
-    gun.position.set(0.12 * s, 0.52 * s, 0.42 * s);
-    gun.rotation.x = -0.08;
-    body.add(gun);
-    // arms reach the gun
-    armR.rotation.x = -1.25;
-    armL.rotation.x = -1.15;
-    foreR.rotation.x = -0.5;
-    foreL.rotation.x = -0.55;
-  }
-
-  const shadowGeo = new THREE.PlaneGeometry(1.15 * s, 1.15 * s);
-  const shadowMat = new THREE.MeshBasicMaterial({
-    map: opts.shadowTexture, transparent: true, opacity: 0.55,
-    depthWrite: false, color: 0x000000,
+  const flashMat = new THREE.SpriteMaterial({
+    map: makeFlashTexture(),
+    blending: THREE.AdditiveBlending,
+    depthTest: false,
+    transparent: true,
   });
-  const blobShadow = new THREE.Mesh(shadowGeo, shadowMat);
-  blobShadow.rotation.x = -Math.PI / 2;
-  blobShadow.position.y = 0.015;
-  root.add(blobShadow);
+  disposables.push(flashMat);
+  const flash = new THREE.Sprite(flashMat);
+  flash.scale.setScalar(0.28);
+  flash.position.copy(muzzle.position);
+  flash.visible = false;
+  gun.add(flash);
 
-  const disposables: { dispose(): void }[] = [
-    skinMat, clothMat, darkMat, eyeMat, eyeGeo, shadowGeo, shadowMat,
-  ];
+  const flashLight = new THREE.PointLight(0xffb45e, 0, 7, 2);
+  flashLight.position.copy(muzzle.position);
+  gun.add(flashLight);
 
-  return {
-    root, body, head, headMesh,
-    armL, foreL, armR, foreR, legL, shinL, legR, shinR,
-    gun, muzzle, blobShadow, flashMaterials, disposables, hipY, scale: s,
-  };
-}
-
-/* ------------------------------ animations ------------------------------ */
-
-/** Walk/run cycle. t is phase in radians; intensity 0..1 scales the stride. */
-export function animateWalk(rig: HumanoidRig, t: number, intensity: number, zombie: boolean): void {
-  const s = Math.sin(t);
-  const c = Math.cos(t);
-  const k = Math.max(0.15, intensity);
-  rig.legL.rotation.x = s * 0.62 * k;
-  rig.legR.rotation.x = -s * 0.62 * k;
-  rig.shinL.rotation.x = Math.max(0, -c) * 0.85 * k;
-  rig.shinR.rotation.x = Math.max(0, c) * 0.85 * k;
-  if (zombie) {
-    rig.armL.rotation.x = -1.45 + s * 0.14 * k;
-    rig.armR.rotation.x = -1.45 - s * 0.14 * k;
-    rig.body.position.y = rig.hipY + Math.abs(s) * 0.045 * k;
-    rig.body.rotation.z = Math.sin(t * 0.5) * 0.07;
-    rig.body.rotation.x = 0.12 + k * 0.06;
-    rig.head.rotation.z = Math.sin(t * 0.37 + 1) * 0.12;
-  } else {
-    rig.armL.rotation.x = -1.15 - s * 0.12 * k;
-    rig.armR.rotation.x = -1.25 + s * 0.12 * k;
-    rig.body.position.y = rig.hipY + Math.abs(s) * 0.05 * k;
-    rig.body.rotation.z = -s * 0.04 * k;
-    rig.body.rotation.x = 0.04 + k * 0.1;
-  }
-}
-
-export function animateIdle(rig: HumanoidRig, time: number, zombie: boolean): void {
-  const b = Math.sin(time * 2.1) * 0.02;
-  rig.body.position.y = rig.hipY + b;
-  if (zombie) {
-    rig.body.rotation.z = Math.sin(time * 0.8) * 0.05;
-    rig.armL.rotation.x = -1.45 + Math.sin(time * 1.3) * 0.06;
-    rig.armR.rotation.x = -1.45 + Math.sin(time * 1.1 + 2) * 0.06;
-    rig.head.rotation.z = Math.sin(time * 0.6) * 0.1;
-  } else {
-    rig.body.rotation.x = 0.02 + b * 0.4;
-  }
-}
-
-/** Attack lunge. p 0..1: windup → swipe → recover. */
-export function animateAttack(rig: HumanoidRig, p: number, zombie: boolean): void {
-  const swing = Math.sin(Math.min(1, p) * Math.PI);
-  if (zombie) {
-    rig.armL.rotation.x = -1.45 - swing * 0.9;
-    rig.armR.rotation.x = -1.45 - swing * 0.9;
-    rig.foreL.rotation.x = -0.25 - swing * 0.5;
-    rig.foreR.rotation.x = -0.25 - swing * 0.5;
-    rig.body.rotation.x = 0.12 + swing * 0.34;
-    rig.head.rotation.x = 0.22 - swing * 0.3;
-  } else {
-    rig.body.rotation.x = swing * 0.12;
-  }
-}
-
-/** Death: topple, sprawl, sink. p 0..1. fallSign +1 = backward. */
-export function animateDeath(rig: HumanoidRig, p: number, fallSign: number): void {
-  const fall = Math.min(1, p / 0.38);
-  const eased = 1 - (1 - fall) * (1 - fall);
-  rig.root.rotation.x = -fallSign * eased * (Math.PI / 2) * 0.92;
-  // limbs go limp
-  rig.armL.rotation.x = THREE.MathUtils.lerp(rig.armL.rotation.x, 0.5, p * 0.2);
-  rig.armR.rotation.x = THREE.MathUtils.lerp(rig.armR.rotation.x, 0.4, p * 0.2);
-  rig.armL.rotation.z = THREE.MathUtils.lerp(0, 0.5, eased);
-  rig.armR.rotation.z = THREE.MathUtils.lerp(0, -0.4, eased);
-  rig.legL.rotation.x = THREE.MathUtils.lerp(rig.legL.rotation.x, 0.15, p * 0.25);
-  rig.legR.rotation.x = THREE.MathUtils.lerp(rig.legR.rotation.x, -0.2, p * 0.25);
-  rig.shinL.rotation.x = THREE.MathUtils.lerp(rig.shinL.rotation.x, 0.3, p * 0.25);
-  rig.body.rotation.z = THREE.MathUtils.lerp(rig.body.rotation.z, 0.18 * fallSign, p * 0.2);
-  rig.head.rotation.x = THREE.MathUtils.lerp(rig.head.rotation.x, -0.35, p * 0.3);
-  // sink + fade in the second half
-  if (p > 0.55) {
-    const sink = (p - 0.55) / 0.45;
-    rig.root.position.y = -sink * 0.55;
-    const opacity = 1 - sink;
-    for (const m of rig.flashMaterials) {
-      m.transparent = true;
-      m.opacity = opacity;
-    }
-    const shadowMat = rig.blobShadow.material as THREE.MeshBasicMaterial;
-    shadowMat.opacity = 0.55 * opacity;
-    rig.blobShadow.scale.setScalar(1 - sink * 0.4);
-  }
-}
-
-/** Weapon recoil kick. k 0..1 (1 = just fired). */
-export function animateRecoil(rig: HumanoidRig, k: number): void {
-  if (!rig.gun) return;
-  rig.gun.position.z = 0.42 * rig.scale - k * 0.09;
-  rig.gun.rotation.x = -0.08 + k * 0.16;
-  rig.armR.rotation.x = -1.25 + k * 0.14;
-  rig.body.rotation.x = Math.max(rig.body.rotation.x, 0.04) - k * 0.03;
-}
-
-/** Reload: gun dips down-left. p 0..1. */
-export function animateReload(rig: HumanoidRig, p: number): void {
-  if (!rig.gun) return;
-  const dip = Math.sin(Math.min(1, p) * Math.PI);
-  rig.gun.rotation.x = -0.08 - dip * 0.75;
-  rig.gun.rotation.z = dip * 0.35;
-  rig.gun.position.y = 0.52 * rig.scale - dip * 0.14;
-  rig.armL.rotation.x = -1.15 - dip * 0.45;
-  rig.head.rotation.x = dip * 0.25;
-}
-
-export function setHitFlash(rig: HumanoidRig, on: boolean): void {
-  for (const m of rig.flashMaterials) {
-    m.emissive.setHex(on ? 0x8a1010 : 0x000000);
-  }
-}
-
-/** World-space head/chest anchors for hit tests. */
-export function headPoint(rig: HumanoidRig, out: THREE.Vector3): THREE.Vector3 {
-  rig.headMesh.getWorldPosition(out);
-  return out;
-}
-
-export function chestPoint(rig: HumanoidRig, out: THREE.Vector3): THREE.Vector3 {
-  rig.body.getWorldPosition(out);
-  out.y += 0.42 * rig.scale;
-  return out;
+  return { weapon, root, gun, armL, armR, muzzle, flash, flashLight, disposables };
 }
