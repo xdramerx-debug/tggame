@@ -37,6 +37,9 @@ jobs:
     needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +68,19 @@ jobs:
             tail -n 150 pw-output.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        name: Comment failure log on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### E2E failure — ${{ matrix.project }} (run ${{ github.run_id }})"
+            echo '```'
+            tail -n 90 pw-output.txt
+            echo '```'
+          } > e2e-fail.md
+          PR=$(gh pr list --head "${GITHUB_REF_NAME#refs/heads/}" --json number --jq '.[0].number // empty')
+          if [ -n "$PR" ]; then gh pr comment "$PR" --body-file e2e-fail.md; fi
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
