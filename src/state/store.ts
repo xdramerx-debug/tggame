@@ -1,110 +1,170 @@
 import { create } from 'zustand';
-import type { GameSnapshot } from '../game/types';
-import { PLAYER, WEAPON } from '../game/types';
-import type { Game, GameEvent } from '../engine/game';
-import { BEST_KEY } from '../engine/game';
+import type { GameSnapshot, MetaProgress } from '../game/types';
+import { PLAYER } from '../game/types';
+import type { Game, RunSummary, UiEvent } from '../engine/game';
 import { setMuted } from '../engine/audio';
 
 /**
- * UI store: a thin bridge between the engine and React. The engine pushes
- * snapshots (~10 Hz) and events; the UI never touches game math directly.
+ * UI store — thin bridge between engine and React.
+ * Engine pushes snapshots (~10 Hz) and events; UI never touches game math.
  */
 
 const DEFAULT_SNAP: GameSnapshot = {
   phase: 'menu',
+  run: 'skirmish',
   hp: PLAYER.maxHp,
   maxHp: PLAYER.maxHp,
-  ammo: WEAPON.magSize,
-  magSize: WEAPON.magSize,
+  armor: 0,
+  armorMax: PLAYER.armorMax,
+  weapon: 'pistol',
+  ammo: 12,
+  magSize: 12,
+  reserve: -1,
   reloading: false,
   reloadProgress: 0,
+  grenades: 0,
+  medkits: 0,
+  money: 800,
+  parts: 0,
   wave: 1,
-  waveState: 'intermission',
   intermissionT: 0,
+  enemiesLeft: 0,
   score: 0,
   kills: 0,
-  combo: 0,
-  comboMult: 1,
-  dashReady: 1,
-  rapidT: 0,
-  zombiesLeft: 0,
+  level: 1,
+  xpInto: 0,
+  xpNeed: 120,
+  perkPoints: 0,
+  shopOpen: false,
+  dashReady: 0,
+  owned: ['pistol'],
+  tuning: { pistol: 0, smg: 0, rifle: 0, shotgun: 0, sniper: 0 },
+  minimap: [],
+  px: 0,
+  pz: 34,
+  pyaw: Math.PI,
 };
+
+interface Banner {
+  title: string;
+  sub: string;
+  tone: 'normal' | 'elite' | 'good';
+}
+
+interface KillfeedEntry {
+  text: string;
+  head: boolean;
+  elite: boolean;
+  id: number;
+}
 
 interface UiState {
   snap: GameSnapshot;
   engine: Game | null;
-  bannerWave: number | null;
+  banner: Banner | null;
   toast: string | null;
+  killfeed: KillfeedEntry[];
   hurtTick: number;
-  killTick: number;
-  lastKillHeadshot: boolean;
-  lastKillGained: number;
-  best: number;
-  newBest: boolean;
+  hurtAngle: number;
+  hitmarkTick: number;
+  hitHead: boolean;
+  summary: RunSummary | null;
+  meta: MetaProgress | null;
   muted: boolean;
   webglFailed: boolean;
 
   attachEngine: (g: Game) => void;
   detachEngine: () => void;
   applySnapshot: (s: GameSnapshot) => void;
-  applyEvent: (e: GameEvent) => void;
+  applyEvent: (e: UiEvent) => void;
   failWebgl: () => void;
   toggleMute: () => void;
+  clearSummary: () => void;
 }
 
 let bannerTimer: number | null = null;
 let toastTimer: number | null = null;
+let hitTimer: number | null = null;
+let kfId = 0;
 
 export const useUi = create<UiState>()((set, get) => ({
   snap: DEFAULT_SNAP,
   engine: null,
-  bannerWave: null,
+  banner: null,
   toast: null,
+  killfeed: [],
   hurtTick: 0,
-  killTick: 0,
-  lastKillHeadshot: false,
-  lastKillGained: 0,
-  best: 0,
-  newBest: false,
+  hurtAngle: 0,
+  hitmarkTick: 0,
+  hitHead: false,
+  summary: null,
+  meta: null,
   muted: false,
   webglFailed: false,
 
   attachEngine: (g) => {
-    set({ engine: g, best: g.getBest() });
+    set({ engine: g, meta: g.getMeta() });
   },
   detachEngine: () => { set({ engine: null }); },
 
-  applySnapshot: (s) => { set({ snap: s }); },
+  applySnapshot: (s) => {
+    set({ snap: s });
+    const g = get().engine;
+    if (g) set({ meta: g.getMeta() });
+  },
 
   applyEvent: (e) => {
     switch (e.type) {
-      case 'wave':
-        set({ bannerWave: e.wave, newBest: false });
+      case 'banner': {
+        set({ banner: { title: e.title, sub: e.sub, tone: e.tone } });
         if (bannerTimer !== null) window.clearTimeout(bannerTimer);
         bannerTimer = window.setTimeout(() => {
           bannerTimer = null;
-          set({ bannerWave: null });
-        }, 1800);
+          set({ banner: null });
+        }, 2200);
         break;
-      case 'bonus':
-        showToast(set, `Бонус волны: +${e.amount}`);
+      }
+      case 'toast': {
+        set({ toast: e.text });
+        if (toastTimer !== null) window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => {
+          toastTimer = null;
+          set({ toast: null });
+        }, 1700);
         break;
-      case 'powerup':
-        showToast(set, e.label);
+      }
+      case 'killfeed': {
+        const entry: KillfeedEntry = { text: e.text, head: e.head, elite: e.elite, id: kfId++ };
+        set((st) => ({ killfeed: [...st.killfeed.slice(-4), entry] }));
+        window.setTimeout(() => {
+          set((st) => ({ killfeed: st.killfeed.filter((k) => k.id !== entry.id) }));
+        }, 2600);
         break;
-      case 'hurt':
-        set((st) => ({ hurtTick: st.hurtTick + 1 }));
+      }
+      case 'hurt': {
+        set((st) => ({ hurtTick: st.hurtTick + 1, hurtAngle: e.angle }));
         break;
-      case 'kill':
-        set((st) => ({
-          killTick: st.killTick + 1,
-          lastKillHeadshot: e.headshot,
-          lastKillGained: e.gained,
-        }));
+      }
+      case 'hitmark': {
+        set((st) => ({ hitmarkTick: st.hitmarkTick + 1, hitHead: e.head }));
+        if (hitTimer !== null) window.clearTimeout(hitTimer);
+        hitTimer = window.setTimeout(() => {
+          hitTimer = null;
+          set({ hitmarkTick: 0 });
+        }, 180);
         break;
+      }
+      case 'levelup': {
+        set({ toast: `⬆ ${e.text}` });
+        if (toastTimer !== null) window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => {
+          toastTimer = null;
+          set({ toast: null });
+        }, 2200);
+        break;
+      }
       case 'gameover': {
-        const best = get().engine?.getBest() ?? get().best;
-        set({ best, newBest: e.newBest });
+        set({ summary: e.summary, meta: get().engine?.getMeta() ?? get().meta });
         break;
       }
     }
@@ -117,23 +177,6 @@ export const useUi = create<UiState>()((set, get) => ({
     setMuted(muted);
     set({ muted });
   },
+
+  clearSummary: () => { set({ summary: null }); },
 }));
-
-type SetFn = (partial: Partial<UiState>) => void;
-
-function showToast(set: SetFn, text: string): void {
-  set({ toast: text });
-  if (toastTimer !== null) window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => {
-    toastTimer = null;
-    set({ toast: null });
-  }, 1700);
-}
-
-export function readBest(): number {
-  try {
-    return Number(localStorage.getItem(BEST_KEY)) || 0;
-  } catch {
-    return 0;
-  }
-}

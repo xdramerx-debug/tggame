@@ -1,94 +1,138 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ReactElement, RefObject } from 'react';
 import { useUi } from '../state/store';
-import type { PointerEvent as RPointerEvent, ReactElement } from 'react';
 
-/**
- * On-screen controls: FIRE (hold = auto), DASH, RELOAD, PAUSE.
- * Buttons write straight into engine.input — no React state per frame.
- * All targets ≥ 48 px, anchored with safe-area insets.
- */
+export function TouchControls({ leftRef }: { leftRef: RefObject<HTMLDivElement>; rightRef: RefObject<HTMLDivElement> }): ReactElement | null {
+  const snap = useUi((s) => s.snap);
+  const engine = useUi((s) => s.engine);
+  const joyRef = useRef<HTMLDivElement>(null);
+  const knobRef = useRef<HTMLDivElement>(null);
+  const [joyActive, setJoyActive] = useState(false);
 
-export function TouchControls(): ReactElement | null {
-  const phase = useUi((s) => s.snap.phase);
-  const dashReady = useUi((s) => s.snap.dashReady);
-  const ammo = useUi((s) => s.snap.ammo);
-  const magSize = useUi((s) => s.snap.magSize);
+  // joystick visual follows InputManager state via polling
+  useEffect(() => {
+    if (snap.phase !== 'playing' || snap.shopOpen) {
+      setJoyActive(false);
+      return;
+    }
+    let raf = 0;
+    const update = (): void => {
+      const input = engine?.input;
+      const left = leftRef.current;
+      const joy = joyRef.current;
+      const knob = knobRef.current;
+      if (!input || !left || !joy || !knob) {
+        raf = requestAnimationFrame(update);
+        return;
+      }
+      // Access private-ish via snapshot and internal fields: use snapshot move
+      const s = input.snapshot();
+      const mag = Math.hypot(s.moveX, s.moveY);
+      if (mag > 0.08) {
+        const rect = left.getBoundingClientRect();
+        // we don't have origin, estimate center of left zone
+        joy.style.left = `${rect.left + rect.width * 0.35}px`;
+        joy.style.top = `${rect.top + rect.height * 0.62}px`;
+        joy.classList.add('active');
+        knob.style.transform = `translate(calc(-50% + ${s.moveX * 34}px), calc(-50% + ${-s.moveY * 34}px))`;
+        setJoyActive(true);
+      } else {
+        joy.classList.remove('active');
+        setJoyActive(false);
+      }
+      raf = requestAnimationFrame(update);
+    };
+    raf = requestAnimationFrame(update);
+    return () => { cancelAnimationFrame(raf); };
+  }, [engine, leftRef, snap.phase, snap.shopOpen]);
 
-  const setFire = useCallback((down: boolean) => {
-    const g = useUi.getState().engine;
-    if (g) g.input.fireHeld = down;
-  }, []);
+  const fireDown = useCallback(() => { engine?.input.setFire(true); }, [engine]);
+  const fireUp = useCallback(() => { engine?.input.setFire(false); }, [engine]);
 
-  const onFireDown = useCallback((e: RPointerEvent<HTMLButtonElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setFire(true);
-  }, [setFire]);
+  if (snap.phase !== 'playing') return null;
+  if (snap.shopOpen) return null;
 
-  const onFireUp = useCallback(() => { setFire(false); }, [setFire]);
-
-  const onDash = useCallback(() => {
-    const g = useUi.getState().engine;
-    if (g) g.input.dashQueued = true;
-  }, []);
-
-  const onReload = useCallback(() => {
-    const g = useUi.getState().engine;
-    if (g) g.input.reloadQueued = true;
-  }, []);
-
-  const onPause = useCallback(() => {
-    useUi.getState().engine?.pause();
-  }, []);
-
-  if (phase !== 'playing') return null;
+  const reserveLabel = snap.reserve < 0 ? '∞' : String(snap.reserve);
+  const reloadPct = snap.reloading ? `${(snap.reloadProgress * 100).toFixed(0)}%` : '';
 
   return (
-    <div className="controls">
-      <button
-        type="button"
-        className="ctl pause-btn"
-        aria-label="Пауза"
-        onPointerDown={onPause}
-      >
+    <div className="controls" aria-hidden={false}>
+      <div ref={joyRef} className="joy-base" aria-hidden="true">
+        <div ref={knobRef} className="joy-knob" />
+      </div>
+
+      <button type="button" className="ctl pause-btn" aria-label="Пауза" onClick={() => engine?.pause()}>
         ⏸
       </button>
 
+      <div className="bottom-left">
+        <button
+          type="button"
+          className="ctl small-btn"
+          aria-label="Прыжок"
+          onPointerDown={() => engine?.input.pressJump()}
+        >
+          ⤒
+        </button>
+        <button
+          type="button"
+          className="ctl small-btn"
+          aria-label="Присед"
+          onPointerDown={() => engine?.input.pressCrouch()}
+        >
+          {snap.hp > 0 && engine ? '🦆' : '⬇'}
+        </button>
+        <button
+          type="button"
+          className="ctl small-btn"
+          aria-label="Рывок"
+          onPointerDown={() => engine?.input.pressDash()}
+          style={{ opacity: snap.dashReady > 0.99 ? 1 : 0.45 }}
+        >
+          »
+        </button>
+      </div>
+
       <div className="ctl-cluster">
-        <div className="ammo-chip" aria-hidden="true">
-          <span className={`ammo-num${ammo === 0 ? ' ammo-empty' : ''}`}>{ammo}</span>
+        <div className="ammo-chip" aria-label={`Патроны ${snap.ammo} из ${snap.magSize}, запас ${reserveLabel}`}>
+          <span className={`ammo-num${snap.ammo === 0 ? ' empty' : ''}`}>{snap.ammo}</span>
           <span className="ammo-sep">/</span>
-          <span className="ammo-mag">{magSize}</span>
+          <span className="ammo-mag">{snap.magSize}</span>
+          <span className="ammo-sep">·</span>
+          <span className="ammo-mag">{reserveLabel}</span>
+          {snap.reloading && <span className="ammo-mag"> {reloadPct}</span>}
         </div>
         <div className="ctl-row">
-          <button
-            type="button"
-            className="ctl small-btn"
-            aria-label="Перезарядка"
-            onPointerDown={onReload}
-          >
+          <button type="button" className="ctl small-btn" aria-label="Перезарядка" onPointerDown={() => engine?.input.pressReload()}>
             ⟳
-          </button>
-          <button
-            type="button"
-            className="ctl small-btn dash-btn"
-            aria-label="Рывок"
-            onPointerDown={onDash}
-            style={{ opacity: dashReady >= 1 ? 1 : 0.45 + dashReady * 0.5 }}
-          >
-            »
           </button>
           <button
             type="button"
             className="ctl fire-btn"
             aria-label="Огонь"
-            onPointerDown={onFireDown}
-            onPointerUp={onFireUp}
-            onPointerCancel={onFireUp}
+            onPointerDown={fireDown}
+            onPointerUp={fireUp}
+            onPointerLeave={fireUp}
+            onPointerCancel={fireUp}
           >
             🔥
           </button>
         </div>
+        <div className="ctl-row">
+          <button type="button" className="ctl small-btn" aria-label="Граната" onPointerDown={() => engine?.input.pressGrenade()}>
+            💣 {snap.grenades}
+          </button>
+          <button type="button" className="ctl small-btn" aria-label="Аптечка" onPointerDown={() => engine?.input.pressMedkit()}>
+            ❤️ {snap.medkits}
+          </button>
+          <button type="button" className="ctl small-btn" aria-label="Радио" onClick={() => engine?.openShop()}>
+            📻
+          </button>
+        </div>
       </div>
+
+      {/* Invisible hint for testing: show joystick active state */}
+      <span data-testid="joy-state" style={{ display: 'none' }}>{joyActive ? 'active' : 'idle'}</span>
     </div>
   );
 }

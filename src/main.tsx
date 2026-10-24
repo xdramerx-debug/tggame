@@ -4,6 +4,6 @@ import './styles.css';
 
 const el = document.getElementById('root');
 if (el) {
-  el.textContent = ''; // drop the inline splash
+  el.textContent = '';
   createRoot(el).render(<App />);
 }

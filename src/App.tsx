@@ -1,41 +1,44 @@
 import { useEffect, useRef } from 'react';
 import type { ReactElement } from 'react';
 import { Game } from './engine/game';
-import { initAudio } from './engine/audio';
 import { useUi } from './state/store';
 import { Hud } from './ui/Hud';
 import { Menus } from './ui/Menus';
 import { TouchControls } from './ui/TouchControls';
+import { unlockAudio } from './engine/audio';
 
-/**
- * App shell: mounts the engine into a host div and layers React UI on top.
- * The engine lives outside React state — only snapshots flow through zustand.
- */
 export function App(): ReactElement {
-  const hostRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const leftRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
+    const canvas = canvasRef.current;
+    const left = leftRef.current;
+    const right = rightRef.current;
+    if (!canvas || !left || !right) return;
+
     let game: Game | null = null;
     try {
-      game = new Game(host, {
+      game = new Game(canvas, {
         onSnapshot: (s) => { useUi.getState().applySnapshot(s); },
         onEvent: (e) => { useUi.getState().applyEvent(e); },
       });
-      useUi.getState().attachEngine(game);
+      if (!game.ok) {
+        useUi.getState().failWebgl();
+      } else {
+        useUi.getState().attachEngine(game);
+        game.attachInput(left, right);
+        game.start();
+      }
     } catch {
       useUi.getState().failWebgl();
     }
     const g = game;
-
-    const onVis = (): void => { g?.onVisibility(document.hidden); };
-    document.addEventListener('visibilitychange', onVis);
-    const unlock = (): void => { initAudio(); };
+    const unlock = (): void => { unlockAudio(); };
     window.addEventListener('pointerdown', unlock, { once: true });
-
     return () => {
-      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pointerdown', unlock);
       g?.dispose();
       useUi.getState().detachEngine();
     };
@@ -43,9 +46,11 @@ export function App(): ReactElement {
 
   return (
     <div className="app">
-      <div ref={hostRef} className="game-host" data-testid="game-host" />
+      <canvas ref={canvasRef} className="game-canvas" data-testid="game-canvas" />
+      <div ref={leftRef} className="touch-zone left" data-testid="touch-left" aria-hidden="true" />
+      <div ref={rightRef} className="touch-zone right" data-testid="touch-right" aria-hidden="true" />
       <Hud />
-      <TouchControls />
+      <TouchControls leftRef={leftRef} rightRef={rightRef} />
       <Menus />
     </div>
   );
