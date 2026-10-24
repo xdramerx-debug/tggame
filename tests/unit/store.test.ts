@@ -33,6 +33,21 @@ describe('game store', () => {
     expect(g.campaign.stage).toBe(1);
   });
 
+  it('FTUE: first battle from step 0 pauses, wins and advances to step 1', () => {
+    // Fresh game starts at step 0. The very first battle must be a guaranteed,
+    // paused FTUE battle (§9) even though the player never manually set step 1.
+    expect(useGameStore.getState().game.ftue.step).toBe(0);
+    useGameStore.getState().startBattle('campaign');
+    const st = useGameStore.getState();
+    expect(st.game.ftue.step).toBe(1); // step advanced on battle start
+    expect(st.ftuePause).toBe(true); // pauses on first hit
+    expect(st.battle?.result.victory).toBe(true); // guaranteed win
+    // resume + finish → victory grants first-clear rewards
+    useGameStore.getState().resumeFromFtuePause();
+    useGameStore.getState().finishBattle();
+    expect(useGameStore.getState().game.campaign.stage).toBe(2);
+  });
+
   it('level-up spends gold & exp and is blocked when broke', () => {
     const st = useGameStore.getState();
     st.addResources({ gold: 1_000_000, heroExp: 1_000_000 });

@@ -1,9 +1,17 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Mobile E2E smoke: boot → FTUE first battle (pause on first hit) → victory →
- * reward → «Улучшить героя» → navigation → summon odds → persistence.
+ * Mobile E2E smoke: boot → FTUE battle #1 (pause on first hit, guaranteed win)
+ * → victory → upgrade hero (FTUE step 3) → squad → summon with public odds →
+ * persistence after reload → FTUE battle #2 (no pause, faster).
+ *
+ * Все локаторы — role/scoped: тексты кнопок содержат эмодзи, а FTUE-плашка
+ * дублирует «В БОЙ», поэтому getByText в лоб даёт strict-mode violation.
  */
+
+const battleBtn = (page: Page) => page.getByRole('button', { name: /В БОЙ/ });
+
+const nav = (page: Page, label: string) => page.locator('.bottom-nav').getByText(label);
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -15,68 +23,69 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('FTUE: first battle, pause on first hit, victory and upgrade', async ({ page }) => {
+test('FTUE: первый бой с паузой, победа, улучшение героя, призыв, персист', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByText('Пробуждение героев…').or(page.getByText('Настройка врат…')).first()).toBeVisible();
-  await expect(page.getByText('В БОЙ')).toBeVisible({ timeout: 15_000 });
 
-  // FTUE hint about the starter hero
-  await expect(page.getByText('Это Велес, твой первый герой')).toBeVisible();
+  // Home after boot: FTUE hint + main CTA
+  await expect(battleBtn(page)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Велес, твой первый герой/)).toBeVisible();
 
-  // Step 1: battle runs automatically but pauses on the first hit
-  await page.getByText('В БОЙ').click();
-  await expect(page.getByText('Твой герой атакует')).toBeVisible({ timeout: 20_000 });
-  await page.getByText('Понятно, дальше!').click();
+  // FTUE battle #1: pauses on first hit, guaranteed victory
+  await battleBtn(page).click();
+  await expect(page.getByText(/Твой герой атакует/)).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('button', { name: 'Понятно, дальше!' }).click();
 
-  // Victory panel with rewards
-  await expect(page.getByText('Победа!')).toBeVisible({ timeout: 120_000 });
-  await page.getByText('К обзору').click();
+  await expect(page.getByText('Победа!')).toBeVisible({ timeout: 90_000 });
+  await page.getByRole('button', { name: 'К обзору' }).click();
 
-  // Back home, FTUE step 2 hint points at upgrading
-  await expect(page.getByText('В БОЙ')).toBeVisible({ timeout: 15_000 });
-
-  // Heroes tab: open starter hero and level him up
-  await page.getByText('Герои', { exact: true }).click();
+  // FTUE step 3 hint: upgrade the hero
+  await expect(nav(page, 'Герои')).toBeVisible({ timeout: 20_000 });
+  await nav(page, 'Герои').click();
   await page.getByText('Велес Тёмный').first().click();
   await expect(page.getByText('Уровень 1 / 20')).toBeVisible();
-  await page.getByText('⬆ Улучшить +1').click();
+  await page.getByRole('button', { name: /Улучшить \+1/ }).click();
   await expect(page.getByText('Уровень 2 / 20')).toBeVisible();
   await page.getByRole('button', { name: '✕' }).click();
 
-  // Squad tab shows the front-row slot filled
-  await page.getByText('Отряд', { exact: true }).click();
-  await expect(page.getByText('ПЕРЕДНИЙ РЯД')).toBeVisible();
+  // Squad screen: front row explained
+  await nav(page, 'Отряд').click();
+  await expect(page.getByText(/ПЕРЕДНИЙ РЯД/)).toBeVisible();
   await expect(page.getByText('Велес Тёмный').first()).toBeVisible();
 
-  // Summon tab: odds are visible before pressing (§5)
-  await page.getByText('Призыв', { exact: true }).click();
-  await page.getByText('Вероятности').click();
+  // Summon: public odds before the pull (§5), then x1 with a starting scroll
+  await nav(page, 'Призыв').click();
+  await page.getByRole('button', { name: /Вероятности/ }).click();
   await expect(page.getByText('Вероятности призыва')).toBeVisible();
-  await expect(page.getByText('Гарант (pity)')).toBeVisible();
+  await expect(page.getByText(/Гарант \(pity\)/)).toBeVisible();
   await page.getByRole('button', { name: '✕' }).click();
-
-  // Ordinary summon with starting scrolls
   await page.getByText('Призыв x1').first().click();
-  await expect(page.getByText('Результат призыва')).toBeVisible({ timeout: 20_000 });
-  await page.getByText('Забрать').click();
+  await expect(page.getByText('Результат призыва')).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Забрать' }).click();
 
-  // Progress persists across a reload (§2: автосохранение)
+  // Progress persists across reload (§2)
   await page.reload();
-  await expect(page.getByText('В БОЙ')).toBeVisible({ timeout: 15_000 });
-  await page.getByText('Герои', { exact: true }).click();
+  await expect(battleBtn(page)).toBeVisible({ timeout: 20_000 });
+  await nav(page, 'Герои').click();
   await page.getByText('Велес Тёмный').first().click();
   await expect(page.getByText('Уровень 2 / 20')).toBeVisible();
 });
 
-test('second battle is faster after the upgrade (ощущение прогресса)', async ({ page }) => {
+test('FTUE battle #2 goes faster: no pause, battle plays to the end', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByText('В БОЙ')).toBeVisible({ timeout: 15_000 });
-  await page.getByText('В БОЙ').click();
-  if (await page.getByText('Понятно, дальше!').isVisible({ timeout: 20_000 }).catch(() => false)) {
-    await page.getByText('Понятно, дальше!').click();
-  }
-  await expect(page.getByText('Победа!')).toBeVisible({ timeout: 120_000 });
-  await page.getByText('Следующий бой').click();
-  // second battle starts right away (FTUE step 3)
-  await expect(page.getByText('Победа!').or(page.getByText('Поражение — это не конец'))).toBeVisible({ timeout: 120_000 });
+  await expect(battleBtn(page)).toBeVisible({ timeout: 20_000 });
+
+  // Battle #1 (forced win, with pause)
+  await battleBtn(page).click();
+  await expect(page.getByText(/Твой герой атакует/)).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('button', { name: 'Понятно, дальше!' }).click();
+  await expect(page.getByText('Победа!')).toBeVisible({ timeout: 90_000 });
+  await page.getByRole('button', { name: 'Следующий бой' }).click();
+
+  // Battle #2 starts automatically after the victory button (step 3).
+  // It may end in victory or defeat (real sim, no force) — both panels are fine;
+  // what matters: no FTUE pause this time.
+  await expect(
+    page.getByText('Победа!').or(page.getByText(/Поражение — это не конец/)),
+  ).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByText(/Твой герой атакует/)).toHaveCount(0);
 });

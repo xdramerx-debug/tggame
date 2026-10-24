@@ -424,7 +424,9 @@ export const useGameStore = create<GameStore>()((set, get) => ({
       };
     });
 
-    const ftueBattle = !game.ftue.done && (game.ftue.step === 1 || game.ftue.step === 3);
+    // FTUE-бой №1 — шаги 0/1 (шаг 0 продвигается здесь же), бой №2 — шаг 3 (§9)
+    const ftueBattle = !game.ftue.done && (game.ftue.step === 0 || game.ftue.step === 1 || game.ftue.step === 3);
+    const ftueFirstBattle = ftueBattle && game.ftue.step <= 1;
     // FTUE-бои всегда выигрываются (§9): обучение не должно ломаться рандомом
     // (явные dev/admin-команды force_win/force_lose имеют приоритет)
     if (ftueBattle && !mods.forceResult) mods.forceResult = 'win';
@@ -434,9 +436,14 @@ export const useGameStore = create<GameStore>()((set, get) => ({
     set({
       screen: 'battle',
       battle: { result, mode, stageDef, startedAt: Date.now(), speed: 1, finished: false, granted: null },
-      ftuePause: ftueBattle,
+      // пауза на первом ударе — только в бою №1; бой №2 идёт быстрее, без паузы
+      ftuePause: ftueFirstBattle,
       defeatTips: [],
-      game: { ...game, forcedNextResult: null },
+      game: {
+        ...game,
+        forcedNextResult: null,
+        ftue: game.ftue.step === 0 ? { ...game.ftue, step: 1 } : game.ftue,
+      },
     });
     get().save();
   },

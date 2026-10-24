@@ -68,12 +68,14 @@ describe('app smoke', () => {
   it('FTUE pauses on the first hit, then playback ends with the victory panel', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTimeAsync });
     await bootApp();
+    // Естественный FTUE-поток: step 0 → startBattle сам поднимает step до 1,
+    // включает паузу на первом ударе и гарантирует победу (§9)
     act(() => {
-      // FTUE step 1 + guaranteed victory for determinism
-      useGameStore.setState((s) => ({ game: { ...s.game, ftue: { step: 1, done: false } } }));
-      useGameStore.getState().submitCode('admin_force_win');
       useGameStore.getState().startBattle('campaign');
     });
+    expect(useGameStore.getState().game.ftue.step).toBe(1);
+    expect(useGameStore.getState().ftuePause).toBe(true);
+    expect(useGameStore.getState().battle?.result.victory).toBe(true);
     await advance(6000);
     expect(screen.getByText(/Твой герой атакует/)).toBeTruthy();
     expect(useGameStore.getState().ftuePause).toBe(true);
